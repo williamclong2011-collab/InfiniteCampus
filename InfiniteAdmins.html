@@ -18,19 +18,24 @@
             Infinite Campus
         </title>
         <link id="dynamic-favicon" rel="icon" type="image/png" href="/res/icon.png">
-        <link rel="stylesheet" href="global.css">
+        <link rel="stylesheet" href="./global.css">
         <meta name="keywords" content="Infinite campus,infinite campus,Infinite Campus,infinite Campus">
         <meta name="description" content="Infinite Campus Is A International Buisiness And Has Good Devs">
         <meta property="og:title" content="Infinite Campus">
         <meta property="og:description" content="Infinite Campus Is An International Buisiness And Has Good Devs">
-        <meta property="og:url" content="https://www.infinitecampus.xyz">
         <meta name="theme-color" content="#8cbe37">
-        <link rel="manifest" href="/manifest.json">
-        <meta content="/res/icon.png" property="og:image">
-        <script src="main.js">
+        <link rel="manifest" href="./manifest.json">
+        <script src="./main.js">
         </script>
-        <script type="module" src="login.js">
+        <script src="./drypopup.js" type="module">
         </script>
+        <script type="module" src="./login.js">
+        </script>
+        <style>
+            .popup2, .settings-button {
+                display:none;
+            }
+        </style>
     </head>
     <body>
         <main>
@@ -81,7 +86,7 @@
             </center>
             <div id="adminChat" style="display:none">
                 <button id="rightToggleBtn">
-                    <i class="bi bi-chevron-left">
+                    <i class="ic ic-chevron-left">
                     </i>
                 </button>
                 <div id="left">
@@ -97,6 +102,25 @@
                         Muted Users
                     </div>
                     <div id="privateChats">
+                    </div>
+                    <h4 class="mt-3 mb-2">Group Chats</h4>
+                    <div id="groupChats">
+                    </div>
+                    <div id="groupChatView" class="mt-3" style="display:none;">
+                        <button id="groupChatBackButton" class="btn btn-secondary mt-3">
+                            Back
+                        </button>
+                        <h3 id="groupChatTitle" class="mb-3">
+                        </h3>
+                        <div id="groupChatMeta" style="font-size:0.85em;color:#aaa;margin-bottom:10px;">
+                        </div>
+                        <div id="groupChatMessages">
+                        </div>
+                        <div class="mt-3">
+                            <button id="deleteGroupChatBtn" class="btn btn-danger">
+                                Delete Group
+                            </button>
+                        </div>
                     </div>
                     <div id="chatView" class="mt-3" style="display:none;">
                         <button id="backButton" class="btn btn-secondary mt-3">
@@ -148,7 +172,7 @@
             <div id="adminMovies" style="display:none">
                 <center>
                     <button id="expandMoviesOrder">
-                        <i class="bi bi-chevron-left">
+                        <i class="ic ic-chevron-left">
                         </i>
                     </button>
                     <div id="editMoviesContainer">
@@ -231,6 +255,21 @@
                     <span class="editor-tab" data-tab="data">
                         Data
                     </span>
+                    <span class="editor-tab" data-tab="words">
+                        Restricted Words
+                    </span>
+                    <span class="editor-tab" data-tab="trackedurls">
+                        Tracked URLs
+                    </span>
+                    <span class="editor-tab" data-tab="users">
+                        User Data
+                    </span>
+                    <span class="editor-tab" data-tab="gamesjson">
+                        Games JSON
+                    </span>
+                    <span class="editor-tab" data-tab="hiddengames">
+                        Hidden Games
+                    </span>
                 </div>
                 <div id="rules-section" class="editor-section visible">
                     <div id="rules-toolbar">
@@ -282,14 +321,136 @@
                         </div>
                     </div>
                 </div>
+                <div id="words-section" class="editor-section">
+                    <div id="words-toolbar" style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+                        <button id="words-save-btn" class="button">
+                            Save
+                        </button>
+                        <button id="words-refresh-btn" class="button">
+                            Refresh
+                        </button>
+                        <button id="words-collapse-all-btn" class="button">
+                            Collapse All
+                        </button>
+                        <button id="words-expand-all-btn" class="button">
+                            Expand All
+                        </button>
+                        <span id="words-status" style="font-size:0.85rem;opacity:0.85;margin-left:auto;">
+                            Loading
+                        </span>
+                    </div>
+                    <div id="words-wrap" style="display:flex;border:1px solid #3e3e3e;border-radius:6px;overflow:auto;background:#1e1e2e;font-family:'Fira Code','Cascadia Code','Consolas',monospace;font-size:0.82rem;line-height:1.6;min-height:420px;max-height:70vh;">
+                        <div id="words-gutter" style="min-width:2.8rem;padding:0.75rem 0.5rem;text-align:right;color:#555;background:#181825;border-right:1px solid #313145;user-select:none;line-height:1.6;font-size:0.78rem;">
+                        </div>
+                        <div id="words-editor" contenteditable="true" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" style="flex:1;padding:0.75rem 1rem;outline:none;overflow:visible;white-space:pre;word-break:break-all;overflow-wrap:anywhere;color:#cdd6f4;caret-color:#cdd6f4;min-height:420px;">
+                        </div>
+                    </div>
+                </div>
+                <div id="trackedurls-section" class="editor-section">
+                    <div id="trackedurls-toolbar" style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+                        <button id="trackedurls-save-btn" class="button">
+                            Save
+                        </button>
+                        <button id="trackedurls-refresh-btn" class="button">
+                            Refresh
+                        </button>
+                        <button id="trackedurls-collapse-all-btn" class="button">
+                            Collapse All
+                        </button>
+                        <button id="trackedurls-expand-all-btn" class="button">
+                            Expand All
+                        </button>
+                        <span id="trackedurls-status" style="font-size:0.85rem;opacity:0.85;margin-left:auto;">
+                            Loading
+                        </span>
+                    </div>
+                    <div id="trackedurls-hint" style="font-size:0.78rem;opacity:0.7;margin-bottom:0.5rem;">
+                        visited = tracked pages, allowedHosts = stop tracking that host and its subdomains.
+                    </div>
+                    <div id="trackedurls-wrap" style="display:flex;border:1px solid #3e3e3e;border-radius:6px;overflow:auto;background:#1e1e2e;font-family:'Fira Code','Cascadia Code','Consolas',monospace;font-size:0.82rem;line-height:1.6;min-height:420px;max-height:70vh;">
+                        <div id="trackedurls-gutter" style="min-width:2.8rem;padding:0.75rem 0.5rem;text-align:right;color:#555;background:#181825;border-right:1px solid #313145;user-select:none;line-height:1.6;font-size:0.78rem;">
+                        </div>
+                        <div id="trackedurls-editor" contenteditable="true" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" style="flex:1;padding:0.75rem 1rem;outline:none;overflow:visible;white-space:pre;word-break:break-all;overflow-wrap:anywhere;color:#cdd6f4;caret-color:#cdd6f4;min-height:420px;">
+                        </div>
+                    </div>
+                </div>
+                <div id="users-section" class="editor-section">
+                    <div id="users-toolbar" style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+                        <button id="users-save-btn" class="button">
+                            Save
+                        </button>
+                        <button id="users-refresh-btn" class="button">
+                            Refresh
+                        </button>
+                        <button id="users-collapse-all-btn" class="button">
+                            Collapse All
+                        </button>
+                        <button id="users-expand-all-btn" class="button">
+                            Expand All
+                        </button>
+                        <span id="users-status" style="font-size:0.85rem;opacity:0.85;margin-left:auto;">
+                            Loading
+                        </span>
+                    </div>
+                    <div id="users-wrap" style="display:flex;border:1px solid #3e3e3e;border-radius:6px;overflow:auto;background:#1e1e2e;font-family:'Fira Code','Cascadia Code','Consolas',monospace;font-size:0.82rem;line-height:1.6;min-height:420px;max-height:70vh;">
+                        <div id="users-gutter" style="min-width:2.8rem;padding:0.75rem 0.5rem;text-align:right;color:#555;background:#181825;border-right:1px solid #313145;user-select:none;line-height:1.6;font-size:0.78rem;">
+                        </div>
+                        <div id="users-editor" contenteditable="true" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" style="flex:1;padding:0.75rem 1rem;outline:none;overflow:visible;white-space:pre;word-break:break-all;overflow-wrap:anywhere;color:#cdd6f4;caret-color:#cdd6f4;min-height:420px;">
+                        </div>
+                    </div>
+                </div>
+                <div id="gamesjson-section" class="editor-section">
+                    <div id="gamesjson-toolbar" style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+                        <button id="gamesjson-save-btn" class="button">
+                            Save
+                        </button>
+                        <button id="gamesjson-refresh-btn" class="button">
+                            Refresh
+                        </button>
+                        <button id="gamesjson-collapse-all-btn" class="button">
+                            Collapse All
+                        </button>
+                        <button id="gamesjson-expand-all-btn" class="button">
+                            Expand All
+                        </button>
+                        <span id="gamesjson-status" style="font-size:0.85rem;opacity:0.85;margin-left:auto;">
+                            Loading
+                        </span>
+                    </div>
+                    <div id="gamesjson-wrap" style="display:flex;border:1px solid #3e3e3e;border-radius:6px;overflow:auto;background:#1e1e2e;font-family:'Fira Code','Cascadia Code','Consolas',monospace;font-size:0.82rem;line-height:1.6;min-height:420px;max-height:70vh;">
+                        <div id="gamesjson-gutter" style="min-width:2.8rem;padding:0.75rem 0.5rem;text-align:right;color:#555;background:#181825;border-right:1px solid #313145;user-select:none;line-height:1.6;font-size:0.78rem;">
+                        </div>
+                        <div id="gamesjson-editor" contenteditable="true" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" style="flex:1;padding:0.75rem 1rem;outline:none;overflow:visible;white-space:pre;word-break:break-all;overflow-wrap:anywhere;color:#cdd6f4;caret-color:#cdd6f4;min-height:420px;">
+                        </div>
+                    </div>
+                </div>
+                <div id="hiddengames-section" class="editor-section">
+                    <div id="hiddengames-toolbar" style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+                        <select id="hiddengames-source-select" class="form-select" style="width:auto;min-width:140px;">
+                        </select>
+                        <button id="hiddengames-save-btn" class="button">
+                            Save
+                        </button>
+                        <button id="hiddengames-refresh-btn" class="button">
+                            Refresh
+                        </button>
+                        <span id="hiddengames-status" style="font-size:0.85rem;opacity:0.85;margin-left:auto;">
+                            Loading
+                        </span>
+                    </div>
+                    <p style="color:#aaa;font-size:0.85rem;max-width:60ch;">
+                        Enter one game ID per line. Games listed here are hidden from the game library for the selected source.
+                    </p>
+                    <textarea id="hiddengames-editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="1042&#10;1057&#10;1099" style="width:100%;min-height:300px;max-height:60vh;background:#1e1e2e;color:#cdd6f4;border:1px solid #3e3e3e;border-radius:6px;padding:0.75rem 1rem;font-family:'Fira Code','Cascadia Code','Consolas',monospace;font-size:0.85rem;line-height:1.6;"></textarea>
+                </div>
                 <div id="panel-btn" class="button">
-                    <i class="bi bi-arrow-left">
+                    <i class="ic ic-arrow-left">
                     </i>
                 </div>
                 <div id="panel">
                     <div id="panel-header">
                         <span id="panel-back" class="button">
-                            <i class="bi bi-arrow-left">
+                            <i class="ic ic-arrow-left">
                             </i>
                         </span>
                         <span id="panel-title" class="tptxt">
@@ -309,7 +470,7 @@
                 <div id="add-panel">
                     <div id="add-inner">
                         <div id="add-close">
-                            <i class="bi bi-x-lg">
+                            <i class="ic ic-x-lg">
                             </i>
                         </div>
                         <h2>
@@ -338,6 +499,12 @@
                 </button>
                 <button class="button" id="lockdowndisc">
                     Lockdown Discord
+                </button>
+                <button class="button" id="movieToggleBtn">
+                    Movies
+                </button>
+                <button class="button" id="restartServerBtn" style="background:#c0392b;">
+                    Restart Server
                 </button>
                 <table id="fileTable">
                     <thead>
@@ -518,7 +685,7 @@
                             </div>
                             <div class="preview-box" id="email-preview" style="display:none;">
                             </div>
-                            <div style="font-size:10px;color:white;margin-top:4px;">
+                            <div style="font-size:10px;margin-top:4px;">
                                 <span class="displayname-chip">
                                     {{DISPLAYNAME}}
                                 </span>
@@ -540,11 +707,11 @@
                 </div>
             </main>
         </div>
-        <script src="admin.js" type="module">
+        <script src="./admin.js" type="module">
         </script>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js">
         </script>
-        <script src="frame.js">
+        <script src="./frame.js">
         </script>
     </body>
 </html>

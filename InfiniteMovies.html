@@ -18,16 +18,16 @@
             Infinite Campus
         </title>
         <link id="dynamic-favicon" rel="icon" type="image/png" href="/res/icon.png">
-        <link rel="stylesheet" href="global.css">
+        <link rel="stylesheet" href="./global.css">
         <meta name="keywords" content="Infinite campus,infinite campus,Infinite Campus,infinite Campus">
         <meta name="description" content="Infinite Campus Is A International Buisiness And Has Good Devs">
         <meta property="og:title" content="Infinite Campus">
         <meta property="og:description" content="Infinite Campus Is An International Buisiness And Has Good Devs">
-        <meta property="og:url" content="https://www.infinitecampus.xyz">
         <meta name="theme-color" content="#8cbe37">
-        <link rel="manifest" href="/manifest.json">
-        <meta content="/res/icon.png" property="og:image">
-        <script src="main.js">
+        <link rel="manifest" href="./manifest.json">
+        <script src="./main.js">
+        </script>
+        <script src="./drypopup.js" type="module">
         </script>
         <style>
             .section {
@@ -53,6 +53,9 @@
                 background: #4caf50;
                 border-radius: 8px;
                 transition: width 0.10s linear;
+            }
+            .popup2, .settings-button {
+                display:none;
             }
         </style>
     </head>
@@ -99,6 +102,11 @@
                         Available Movies
                     </h2>
                     <input class="button mbInp" id="search" placeholder="Search Movies" autocomplete="off" oninput="filterMovies()">
+                    <select class="button" id="sortSelect" onchange="setSortMode(this.value)">
+                        <option value="order">Sort: Default Order</option>
+                        <option value="name">Sort: Name (A-Z)</option>
+                        <option value="popularity">Sort: Most Popular</option>
+                    </select>
                     <button class="button" onclick="loadMovies()">
                         Reload List
                     </button>
@@ -109,10 +117,7 @@
                 <br>
                 <br>
                 <div id="watchPanel">
-                    <button class="button" id="backBtn" class="button" onclick="closeWatchPanel()">
-                        Back
-                    </button>
-                    <video id="watchVideo" controls>
+                    <video id="watchVideo">
                     </video>
                     <div id="networkWarning">
                         Slow Network Detected
@@ -124,9 +129,9 @@
         </main>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js">
         </script>
-        <script type="module" src="movies.js">
+        <script type="module" src="./movies.js">
         </script>
-        <script src="frame.js">
+        <script src="./frame.js">
         </script>
     </body>
 </html>

@@ -1,4 +1,5 @@
 import { messaging, getToken, auth, onAuthStateChanged, signOut, sendPasswordResetEmail, updateProfile, sendEmailVerification, applyActionCode, confirmPasswordReset } from './imports.js';
+import { STATUS_META, SELECTABLE_STATUSES, normalizeStatus, postStatus, createIdleWatcher } from './statusutils.js';
 const urlParams = new URLSearchParams(window.location.search);
 const mode = urlParams.get('mode');
 const oobCode = urlParams.get('oobCode');
@@ -9,10 +10,11 @@ const settingsPage = document.getElementById('settingsPage');
 const profileView = document.getElementById('profileView');
 const authcontainer = document.getElementById('authContainer');
 const enableNotifBtn = document.getElementById('enableNotifBtn');
-let pfpDomain = "/pfps";
-if (!(e.includes(window.location.host))) {
-    pfpDomain = "https://raw.githubusercontent.com/InfiniteCampus41/InfiniteCampus/refs/heads/main/pfps"; 
-}
+const statusRow = document.getElementById('statusRow');
+const statusIcon = document.getElementById('statusIcon');
+const statusLabel = document.getElementById('statusLabel');
+const statusDropdown = document.getElementById('statusDropdown');
+const pfpDomain = `${a}/pfps`;
 try {
     if (Notification) {
         if (Notification.permission === "granted") {
@@ -21,18 +23,6 @@ try {
     }   
 } catch {
     console.error("Notification System Error")
-}
-let profileImages = [];
-async function loadProfileImages() {
-    try {
-        const res = await fetch(`${pfpDomain}/index.json`, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const files = await res.json();
-        return files.map(f => `${pfpDomain}/` + f);
-    } catch (e) {
-        console.error("Failed To Load Profile Images:", e);
-        return [`${pfpDomain}/1.jpeg`];
-    }
 }
 let currentUser = null;
 let authReady = false;
@@ -64,6 +54,47 @@ async function fetchAPI(endpoint, body) {
         throw new Error(json?.error || "Request failed");
     }
     return json;
+}
+async function applyBanStatusToAccountPage() {
+    const editableIds = [
+        "editDisplayBtn", "saveDisplayBtn", "cancelDisplayBtn",
+        "editBioBtn", "saveBioBtn", "cancelBioBtn",
+        "editDisBtn", "saveDisBtn", "cancelDisBtn",
+        "saveNameColorBtn", "nameColorInput",
+        "resetPasswordBtnAcc", "verifyEmailBtn", "enableNotifBtn"
+    ];
+    const noticeEl = document.getElementById("bannedAccountNotice");
+    const reasonEl = document.getElementById("bannedAccountReason");
+    const expiresEl = document.getElementById("bannedAccountExpires");
+    try {
+        const token = await getAuthToken();
+        if (!token) return;
+        const res = await fetch(`${a}/ban-status`, {
+            headers: { "Authorization": "Bearer " + token }
+        });
+        const json = await res.json();
+        if (!json?.banned) {
+            if (noticeEl) noticeEl.style.display = "none";
+            return;
+        }
+        for (const id of editableIds) {
+            const el = document.getElementById(id);
+            if (el) el.style.setProperty("display", "none", "important");
+        }
+        const extSection = document.getElementById("extCheckContainer");
+        if (extSection) extSection.style.setProperty("display", "none", "important");
+        if (noticeEl) {
+            noticeEl.style.display = "block";
+            if (reasonEl) reasonEl.textContent = json.reason ? `Reason: ${json.reason}` : "";
+            if (expiresEl) {
+                expiresEl.textContent = json.expiresAt
+                    ? `Expires: ${new Date(json.expiresAt).toLocaleString()}`
+                    : "This Ban Does Not Expire.";
+            }
+        }
+    } catch (err) {
+        console.warn("Failed To Load Ban Status:", err);
+    }
 }
 function pathToArray(path) {
     return path.split("/").filter(Boolean);
@@ -126,6 +157,91 @@ function dbListen(path, callback) {
 }
 const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const isInStandaloneMode = window.navigator.standalone === true;
+const isPWA = isInStandaloneMode || window.matchMedia("(display-mode: standalone)").matches;
+function getDeviceId() {
+    try {
+        let id = localStorage.getItem("icDeviceId");
+        if (!id) {
+            id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+            localStorage.setItem("icDeviceId", id);
+        }
+        return id;
+    } catch {
+        return null;
+    }
+}
+let currentUserStatus = "online";
+let statusIdleWatcher = null;
+function renderStatusUI(status) {
+    if (!statusIcon || !statusLabel || !statusDropdown) return;
+    const meta = STATUS_META[normalizeStatus(status)];
+    statusIcon.className = meta.icon;
+    statusIcon.style.color = meta.color;
+    statusLabel.textContent = meta.label;
+    statusDropdown.querySelectorAll(".statusOption").forEach(opt => {
+        const isSelected = opt.dataset.status === status;
+        opt.classList.toggle("selected", isSelected);
+        const check = opt.querySelector(".statusCheck");
+        if (check) check.style.visibility = isSelected ? "visible" : "hidden";
+    });
+}
+async function selectAccountStatus(status) {
+    if (!currentUser || !SELECTABLE_STATUSES.includes(status)) return;
+    currentUserStatus = status;
+    renderStatusUI(status);
+    if (statusDropdown) statusDropdown.style.display = "none";
+    await postStatus(a, getAuthToken, status);
+}
+if (statusRow) {
+    statusRow.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!statusDropdown) return;
+        statusDropdown.style.display = statusDropdown.style.display === "block" ? "none" : "block";
+    });
+}
+if (statusDropdown) {
+    statusDropdown.querySelectorAll(".statusOption").forEach(opt => {
+        opt.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selectAccountStatus(opt.dataset.status);
+        });
+    });
+}
+document.addEventListener("click", (e) => {
+    if (!statusDropdown || statusDropdown.style.display !== "block") return;
+    if (!statusDropdown.contains(e.target) && !statusRow?.contains(e.target)) {
+        statusDropdown.style.display = "none";
+    }
+});
+async function initAccountStatusUI(user) {
+    if (!statusRow) return;
+    try {
+        const status = await dbGet(`users/${user.uid}/profile/status`);
+        currentUserStatus = SELECTABLE_STATUSES.includes(status) ? status : "online";
+    } catch {
+        currentUserStatus = "online";
+    }
+    renderStatusUI(currentUserStatus);
+    statusRow.style.display = "";
+    dbListen(`users/${user.uid}/profile/status`, (val) => {
+        if (SELECTABLE_STATUSES.includes(val)) {
+            currentUserStatus = val;
+            renderStatusUI(val);
+        }
+    });
+    if (statusIdleWatcher) statusIdleWatcher.stop();
+    statusIdleWatcher = createIdleWatcher({
+        getManualStatus: () => currentUserStatus,
+        onAutoIdle: () => {
+            renderStatusUI("idle");
+            postStatus(a, getAuthToken, "idle");
+        },
+        onAutoResume: () => {
+            renderStatusUI("online");
+            postStatus(a, getAuthToken, "online");
+        }
+    });
+}
 async function enableNotifications() {
     if (!("Notification" in window)) {
         showError("Your Browser Does Not Support Notifications.");
@@ -150,7 +266,11 @@ async function enableNotifications() {
             });
             const user = auth.currentUser;
             if (user) {
-                await dbSet("notifications/" + user.uid + "/tokens/" + token, true);
+                await dbSet("notifications/" + user.uid + "/tokens/" + token, {
+                    ts: Date.now(),
+                    deviceId: getDeviceId(),
+                    isPWA
+                });
                 showSuccess("Notifications Have Been Enabled");
                 document.dispatchEvent(new Event("notificationsEnabled"));
             } else {
@@ -392,27 +512,35 @@ if (unsub) {
         badgeContainer.style.gap = "6px";
         badgeContainer.style.marginLeft = "6px";
         const roles = [
-            { key: "isSus", icon: "bi bi-shield-exclamation", title: "This User Is Currently Under Investigation, Please Do Not Interact With This User", color: "red" },
-            { key: "isOwner", icon: "bi bi-shield-plus", title: "Owner", color: "lime" },
-            { key: "isTester", icon: "fa-solid fa-cogs", title: "Tester", color: "DarkGoldenRod" },
-            { key: "isCoOwner", icon: "bi bi-shield-fill", title: "Co-Owner", color: "lightblue" },
-            { key: "isHAdmin", icon: "fa-solid fa-shield-halved", title: "Head Admin", color: "#00cc99" },
-            { key: "isAdmin", icon: "bi bi-shield", title: "Admin", color: "dodgerblue" },
-            { key: "isPartner", icon: "fa fa-handshake", title: "This User Is A Partner Of Infinite Campus", color: "cornflowerblue" },
-            { key: "isDev", icon: "bi bi-code-square", title: "This User Is A Developer For Infinitecampus.xyz", color: "green" },
-            { key: "premium3", icon: "bi bi-hearts", title: "This User Has Infinite Campus Premium T3", color: "red" },
-            { key: "premium2", icon: "bi bi-heart-fill", title: "This User Has Infinite Campus Premium T2", color: "orange" },
-            { key: "premium1", icon: "bi bi-heart-half", title: "This User Has Infinite Campus Premium T1", color: "yellow" },
-            { key: "isDonater", icon: "bi bi-balloon-heart", title: "This User Has Donated To Infinite Campus", color: "#00E5FF"},
-            { key: "isUploader", icon: "bi bi-film", title: "This User Has Uploaded A Movie To Infinite Campus", color: "grey"},
-            { key: "mileStone", icon: "bi bi-award", title: "This User Is The 100th Signed Up User", color: "yellow" },
-            { key: "isGuesser", icon: "bi bi-stopwatch", title: "This User Has A Lot Of Freetime", color: "#FF0000" },
-            { key: "isLink", icon: "bi bi-link", title: "This Use Has Shared Lots Of Links In The Links Channel", color: "#4fa3ff"},
-            { key: "secure", icon: "bi ic ic-securely", title: "This User Has Securely At School", color: "dodgerblue"},
-            { key: "guardian", icon: "bi ic ic-goguardian", title: "This User Has GoGuardian At School", color: "grey"},
-            { key: "lanschool", icon: "bi ic ic-lanschool", title: "This User Has Lanschool At School", color: "greenyellow"},
-            { key: "linewize", icon: "bi ic ic-linewize", title: "This User Has Linewize At School", color: "lightskyblue"},
-            { key: "blocksi", icon: "bi ic ic-blocksi", title: "This User Has Blocksi At School", color: "cadetblue"}
+            { key: "isSus", icon: "ic ic-shield-exclamation", title: "This User Is Currently Under Investigation, Please Do Not Interact With This User", color: "red" },
+            { key: "isOwner", icon: "ic ic-shield-plus", title: "Owner", color: "lime" },
+            { key: "isTester", icon: "ic ic-cogs", title: "Tester", color: "DarkGoldenRod" },
+            { key: "isCoOwner", icon: "ic ic-shield-fill", title: "Co-Owner", color: "lightblue" },
+            { key: "isHAdmin", icon: "ic ic-shield-halved", title: "Head Admin", color: "#00cc99" },
+            { key: "isAdmin", icon: "ic ic-shield", title: "Admin", color: "dodgerblue" },
+            { key: "isPartner", icon: "ic ic-handshake", title: "This User Is A Partner Of Infinite Campus", color: "cornflowerblue" },
+            { key: "isDev", icon: "ic ic-code-square", title: "This User Is A Developer For Infinite Campus Games", color: "green" },
+            { key: "premium3", icon: "ic ic-hearts", title: "This User Has Infinite Campus Premium T3", color: "red" },
+            { key: "premium2", icon: "ic ic-heart-fill", title: "This User Has Infinite Campus Premium T2", color: "orange" },
+            { key: "premium1", icon: "ic ic-heart-half", title: "This User Has Infinite Campus Premium T1", color: "yellow" },
+            { key: "isDonater", icon: "ic ic-balloon-heart", title: "This User Has Donated To Infinite Campus", color: "#00E5FF"},
+            { key: "isUploader", icon: "ic ic-film", title: "This User Has Uploaded A Movie To Infinite Campus", color: "grey"},
+            { key: "mileStone", icon: "ic ic-award", title: "This User Is The 100th Signed Up User", color: "yellow" },
+            { key: "isGuesser", icon: "ic ic-stopwatch", title: "This User Has A Lot Of Freetime", color: "#FF0000" },
+            { key: "isLink", icon: "ic ic-link", title: "This Use Has Shared Lots Of Links In The Links Channel", color: "#4fa3ff"},
+            { key: "secure", icon: "ib ic ic-securely", title: "This User Has Securely At School", color: ""},
+            { key: "guardian", icon: "ib ic ic-goguardian", title: "This User Has GoGuardian At School", color: ""},
+            { key: "lanschool", icon: "ib ic ic-lanschool", title: "This User Has Lanschool At School", color: ""},
+            { key: "linewize", icon: "ib ic ic-linewize", title: "This User Has Linewize At School", color: ""},
+            { key: "blocksi", icon: "ib ic ic-blocksi", title: "This User Has Blocksi At School", color: ""},
+            { key: "fortiguard", icon:"ib ic ic-fortiguard", title: "This User Has FortiGuard At School", color:"" },
+            { key: "lightspeed", icon:"ib ic ic-lightspeed", title: "This User Has LightSpeed At School", color:"" },
+            { key: "cisco", icon:"ib ic ic-cisco", title: "This User Has Cisco Umbrella At School", color:"" },
+            { key: "contentkeeper", icon:"ib ic ic-contentkeeper", title: "This User Has ContentKeeper At School", color:"" },
+            { key: "deledao", icon:"ib ic ic-deledao", title: "This User Has Deledao At School", color:""},
+            { key: "iboss", icon:"ib ic ic-iboss", title: "This User Has IBoss At School", color:"" },
+            { key: "barracuda", icon:"ib ic ic-barracuda", title: "This User Has Barracuda At School", color:"" },
+
         ];
         roles.forEach(r => {
             if (profile?.[r.key] === true) {
@@ -426,7 +554,7 @@ if (unsub) {
         });
         if (dUsername && dUsername.trim() !== "") {
             const discordBadge = document.createElement("i");
-            discordBadge.className = "bi bi-discord";
+            discordBadge.className = "ic ic-discord";
             discordBadge.title = `Known As @${dUsername} On The Infinite Campus Discord Server`;
             discordBadge.style.color = "#5865F2";
             badgeContainer.appendChild(discordBadge);
@@ -440,7 +568,7 @@ if (unsub) {
         }
         if (isVerified === true) {
             const verified = document.createElement("i");
-            verified.className = "bi bi-shield-check";
+            verified.className = "ic ic-shield-check";
             verified.title = "Verified User";
             verified.style.color = "white";
             verified.style.fontSize = "1.1em";
@@ -480,10 +608,7 @@ if (unsub) {
             const displayName = displayNameRaw?.trim() ? displayNameRaw : "Spam Account";
             const bio = foundUser.profile?.bio || "No Bio Set.";
             const email = foundUser.settings?.userEmail || "(Hidden)";
-            const picValue = foundUser.profile?.pic ?? 0;
-            const profileImages = await loadProfileImages();
-            const rawSrc = profileImages[picValue] || profileImages[0];
-            const imgSrc = rawSrc.split("?")[0] + "?t=" + Date.now();
+            const imgSrc = `${pfpDomain}/${uid}?t=${Date.now()}`;
             loadingEl.style.display = "none";
             errorEl.style.display = "none";
             profileContent.style.display = "block";
@@ -581,6 +706,36 @@ if (unsub) {
         .btn:active {
             border:none;
         }
+        #extCheckContainer {
+            max-height: 220px;
+            overflow-y: auto;
+            padding: 4px 2px;
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+        }
+        .extCheckItem {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 4px;
+        }
+        .extCheckItem img {
+            height: 20px;
+            flex-shrink: 0;
+        }
+        .extCheckItem label {
+            color: #ccc;
+            text-align: left;
+            margin: 0;
+            cursor: pointer;
+            flex: 1;
+        }
+        .extCheckItem .switch {
+            margin-left: auto;
+            flex-shrink: 0;
+            max-width:50px;
+        }
     `;
     document.head.appendChild(style);
     profileView.style.display = 'none';
@@ -629,7 +784,7 @@ if (unsub) {
     hoverOverlay.style.opacity = "0";
     hoverOverlay.style.cursor = "pointer";
     hoverOverlay.style.transition = "0.2s";
-    hoverOverlay.innerHTML = `<i class="bi bi-pencil-fill" style="color:white;font-size:24px;"></i>`;
+    hoverOverlay.innerHTML = `<i class="ic ic-pencil-fill" style="color:white;font-size:24px;"></i>`;
     pfpWrapper.appendChild(hoverOverlay);
     pfpWrapper.addEventListener("mouseenter", () => {
         hoverOverlay.style.opacity = "1";
@@ -736,14 +891,22 @@ if (unsub) {
                     showError("Upload Failed");
                     return;
                 }
-                const newUrl = `${pfpDomain}/` + data.file;
+                const newUrl = `${pfpDomain}/${currentUser.uid}`;
                 panelPic.src = newUrl + "?t=" + Date.now();
                 currentServerPicUrl = newUrl;
                 showSuccess("Profile Picture Updated!");
             }
             if (removeRequested) {
-                await dbSet(`users/${currentUser.uid}/profile/pic`, 0);
-                panelPic.src = `${pfpDomain}/1.jpeg?t=${Date.now()}`;
+                const token = await getAuthToken();
+                await fetch(`${a}/remove-pfp`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ uid: currentUser.uid })
+                });
+                panelPic.src = `${pfpDomain}/${currentUser.uid}?t=${Date.now()}`;
                 showSuccess("Profile Picture Removed!");
             }
             pfpModalBg.style.display = "none";
@@ -1103,7 +1266,52 @@ if (unsub) {
             disInput.value = disInput.value.slice(0, 50);
         }
     });
-    const extCheckboxes = document.querySelectorAll(".extCheck");
+    const BLOCKING_EXTENSIONS = [
+        { key: "secure", label: "Securely", img: "/icons/securely.webp" },
+        { key: "guardian", label: "GoGuardian", img: "/icons/goguardian.webp" },
+        { key: "lanschool", label: "Lanschool", img: "/icons/lanschool.webp" },
+        { key: "linewize", label: "Linewize", img: "/icons/linewize.webp" },
+        { key: "blocksi", label: "Blocksi", img: "/icons/blocksi.webp" },
+        { key: "fortiguard", label: "FortiGuard", img: "/icons/fortiguard.webp" },
+        { key: "lightspeed", label: "LightSpeed", img: "/icons/lightspeed.webp" },
+        { key: "cisco", label: "Cisco Umbrella", img: "/icons/cisco.webp" },
+        { key: "contentkeeper", label: "ContentKeeper", img: "/icons/contentkeeper.webp" },
+        { key: "deledao", label: "Deledao", img: "/icons/deledao.webp" },
+        { key: "iboss", label: "IBoss", img: "/icons/iboss.webp" },
+        { key: "barracuda", label: "Barracuda", img: "/icons/barracuda.webp" }
+    ];
+    const extCheckContainer = document.getElementById("extCheckContainer");
+    let extCheckboxes = [];
+    if (extCheckContainer) {
+        extCheckContainer.innerHTML = "";
+        BLOCKING_EXTENSIONS.forEach(ext => {
+            const item = document.createElement("div");
+            item.className = "extCheckItem";
+            const img = document.createElement("img");
+            img.src = ext.img;
+            const label = document.createElement("label");
+            label.htmlFor = `extCheck_${ext.key}`;
+            label.textContent = ext.label;
+            const switchLabel = document.createElement("label");
+            switchLabel.className = "switch";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.className = "extCheck";
+            cb.id = `extCheck_${ext.key}`;
+            cb.dataset.key = ext.key;
+            const slider = document.createElement("span");
+            slider.className = "slider";
+            switchLabel.appendChild(cb);
+            switchLabel.appendChild(slider);
+            item.appendChild(img);
+            item.appendChild(label);
+            item.appendChild(switchLabel);
+            extCheckContainer.appendChild(item);
+        });
+        extCheckboxes = Array.from(extCheckContainer.querySelectorAll(".extCheck"));
+    } else {
+        console.error("extCheckContainer Not Found In The Page.");
+    }
     extCheckboxes.forEach(cb => {
         cb.addEventListener("change", async () => {
             if (!currentUser) return;
@@ -1163,16 +1371,7 @@ if (unsub) {
     });
     async function loadUserProfilePic(uid) {
         try {
-            const snap = await dbGet(`users/${uid}/profile/pic`);
-            let picIndex = 0;
-            if (snap != null) {
-                picIndex = snap;
-            }
-            if (!profileImages || profileImages.length === 0) {
-                profileImages = await loadProfileImages();
-            }
-            const baseUrl = profileImages[picIndex] || profileImages[0] || `${pfpDomain}/1.jpeg`;
-            const cleanBase = baseUrl.split("?")[0];
+            const cleanBase = `${pfpDomain}/${uid}`;
             panelPic.src = cleanBase + "?t=" + Date.now();
             setSetting("pic", cleanBase);
         } catch (err) {
@@ -1211,7 +1410,6 @@ if (unsub) {
             await loadDisplayName(user.uid);
             await loadUserBio(user.uid);
             await loadUserDis(user.uid);
-            profileImages = await loadProfileImages();
             await loadUserProfilePic(user.uid);
             function applyProfile(profile) {
                 if (!profile) return;
@@ -1225,7 +1423,7 @@ if (unsub) {
                     badgeContainer.style.display = 'flex';
                     badgeContainer.style.flexDirection = 'column';
                     badge.style.color = color;
-                    badge.style.fontSize = '1.5em';
+                    badge.style.fontSize = '2em';
                     badge.style.fontWeight = "600";
                     badge.innerHTML = `
                         <i class="${icon}" style="margin-right:6px;" title="${name}"></i>
@@ -1234,101 +1432,129 @@ if (unsub) {
                 }
                 let hasAnyRole = false;
                 if (profile.isSus) {
-                    addBadge("This User Is Currently Under Investigation, Please Do Not Interact With This User", "red", "bi bi-shield-exclamation");
+                    addBadge("This User Is Currently Under Investigation, Please Do Not Interact With This User", "red", "ic ic-shield-exclamation");
                     hasAnyRole = true;
                 }
                 if (profile.isOwner) {
-                    addBadge("Owner", "lime", "bi bi-shield-plus");
+                    addBadge("Owner", "lime", "ic ic-shield-plus");
                     adminBtn.style.display = 'block';
                     hasAnyRole = true;
                 }
                 if (profile.isTester) {
-                    addBadge("Tester", "DarkGoldenRod", "fa-solid fa-cogs");
+                    addBadge("Tester", "DarkGoldenRod", "ic ic-cogs");
                     adminBtn.style.display = 'block';
                     hasAnyRole = true;
                 }
                 if (profile.isCoOwner) {
-                    addBadge("Co-Owner", "lightblue", "bi bi-shield-fill");
+                    addBadge("Co-Owner", "lightblue", "ic ic-shield-fill");
                     adminBtn.style.display = 'block';
                     hasAnyRole = true;
                 }
                 if (profile.isHAdmin) {
-                    addBadge("Head Admin", "#00cc99", "fa-solid fa-shield-halved");
+                    addBadge("Head Admin", "#00cc99", "ic ic-shield-halved");
                     adminBtn.style.display = 'block';
                     hasAnyRole = true;
                 }
                 if (profile.isAdmin) {
-                    addBadge("Admin", "dodgerblue", "bi bi-shield");
+                    addBadge("Admin", "dodgerblue", "ic ic-shield");
                     hasAnyRole = true;
                 }
                 if (profile.isPartner) {
-                    addBadge("This User Is A Partner Of Infinite Campus", "cornflowerblue", "fa fa-handshake");
+                    addBadge("This User Is A Partner Of Infinite Campus", "cornflowerblue", "ic ic-handshake");
                     hasAnyRole = true;
                 }
                 if (profile.isDev) {
-                    addBadge("This User Is A Developer For Infinitecampus.xyz", "green", "bi bi-code-square");
+                    addBadge("This User Is A Developer For Infinite Campus Games", "green", "ic ic-code-square");
                     adminBtn.style.display = 'block';
                     hasAnyRole = true;
                 }
                 if (profile.premium3) {
-                    addBadge("This User Has Infinite Campus Premium T3", "red", "bi bi-hearts");
+                    addBadge("This User Has Infinite Campus Premium T3", "red", "ic ic-hearts");
                     hasAnyRole = true;
                 }
                 if (profile.premium2) {
-                    addBadge("This User Has Infinite Campus Premium T2", "orange", "bi bi-heart-fill");
+                    addBadge("This User Has Infinite Campus Premium T2", "orange", "ic ic-heart-fill");
                     hasAnyRole = true;
                 }
                 if (profile.premium1) {
-                    addBadge("This User Has Infinite Campus Premium", "yellow", "bi bi-heart-half");
+                    addBadge("This User Has Infinite Campus Premium", "yellow", "ic ic-heart-half");
                     hasAnyRole = true;
                 }
                 if (profile.isDonater) {
-                    addBadge("This User Has Donated To Infinite Campus", "#00E5FF", "bi bi-balloon-heart");
+                    addBadge("This User Has Donated To Infinite Campus", "#00E5FF", "ic ic-balloon-heart");
                     hasAnyRole = true;
                 }
                 if (profile.isUploader) {
-                    addBadge("This User Has Uploaded A Movie To Infinite Campus", "grey", "bi bi-film");
+                    addBadge("This User Has Uploaded A Movie To Infinite Campus", "grey", "ic ic-film");
                     hasAnyRole = true
                 }
                 if (profile.mileStone) {
-                    addBadge("This User Is The 100th Signed Up User", "yellow", "bi bi-award");
+                    addBadge("This User Is The 100th Signed Up User", "yellow", "ic ic-award");
                     hasAnyRole = true;
                 }
                 if (profile.isGuesser) {
-                    addBadge("This User Has A Lot Of Freetime", "#FF0000", "bi bi-stopwatch");
+                    addBadge("This User Has A Lot Of Freetime", "#FF0000", "ic ic-stopwatch");
                     hasAnyRole = true;
                 }
                 if (profile.dUsername) {
                     const discordUser = profile.dUsername;
-                    addBadge(`Known As @${discordUser} On Discord`, "#5865F2", "bi bi-discord");
+                    addBadge(`Known As @${discordUser} On Discord`, "#5865F2", "ic ic-discord");
                     hasAnyRole = true;
                 }
                 if (profile.isLink) {
-                    addBadge("This User Has Shared A Lot Of Links In The Links Channel", "#4fa3ff", "bi bi-link");
+                    addBadge("This User Has Shared A Lot Of Links In The Links Channel", "#4fa3ff", "ic ic-link");
                     hasAnyRole = true;
                 }
                 if (profile.secure) {
-                    addBadge("This User Has Securely At School", "dodgerblue", "bi ic ic-securely");
+                    addBadge("This User Has Securely At School", "", "ib ic ic-securely");
                     hasAnyRole = true;
                 }
                 if (profile.guardian) {
-                     addBadge("This User Has GoGuardian At School", "grey", "bi ic ic-goguardian");
+                     addBadge("This User Has GoGuardian At School", "", "ib ic ic-goguardian");
                     hasAnyRole = true;
                 }
                 if (profile.lanschool) {
-                    addBadge("This User Has Lanschool At School", "greenyellow", "bi ic ic-lanschool");
+                    addBadge("This User Has Lanschool At School", "", "ib ic ic-lanschool");
                     hasAnyRole = true;
                 }
                 if (profile.linewize) {
-                    addBadge("This User Has Linewize At School", "lightskyblue", "bi ic ic-linewize");
+                    addBadge("This User Has Linewize At School", "", "ib ic ic-linewize");
                     hasAnyRole = true;
                 }
                 if (profile.blocksi) {
-                    addBadge("This User Has Blocksi At School", "cadetblue", "bi ic ic-blocksi");
+                    addBadge("This User Has Blocksi At School", "", "ib ic ic-blocksi");
+                    hasAnyRole = true;
+                }
+                if (profile.fortiguard) {
+                    addBadge("This User Has FortiGuard At School", "", "ib ic ic-fortiguard");
+                    hasAnyRole = true;
+                }
+                if (profile.lightspeed) {
+                    addBadge("This User Has LightSpeed At School", "", "ib ic ic-lightspeed");
+                    hasAnyRole = true;
+                }
+                if (profile.cisco) {
+                    addBadge("This User Has Cisco Umbrella At School", "", "ib ic ic-cisco");
+                    hasAnyRole = true;
+                }
+                if (profile.contentkeeper) {
+                    addBadge("This User Has ContentKeeper At School", "", "ib ic ic-contentkeeper");
+                    hasAnyRole = true;
+                }
+                if (profile.deledao) {
+                    addBadge("This User Has Deledao At School", "", "ib ic ic-deledao");
+                    hasAnyRole = true;
+                }
+                if (profile.iboss) {
+                    addBadge("This User Has IBoss At School", "", "ib ic ic-iboss");
+                    hasAnyRole = true;
+                }
+                if (profile.barracuda) {
+                    addBadge("This User Has Barracuda At School", "", "ib ic ic-barracuda");
                     hasAnyRole = true;
                 }
                 if (profile.verified) {
-                    addBadge("Verified User", "white", "bi bi-shield-check");
+                    addBadge("Verified User", "white", "ic ic-shield-check");
                     hasAnyRole = true;
                 }
             }
@@ -1355,6 +1581,8 @@ if (unsub) {
             await loadUserBio(user.uid);
             await loadUserDis(user.uid);
             await loadUserProfilePic(user.uid);
+            await applyBanStatusToAccountPage();
+            await initAccountStatusUI(user);
             window.__appResolve();
         }
     });

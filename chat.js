@@ -1,4 +1,5 @@
-import { auth, onAuthStateChanged } from "/imports.js";
+import { auth, onAuthStateChanged } from "./imports.js";
+import { createIdleWatcher } from "./statusutils.js";
 const sidebar = document.getElementById("sidebar");
 const mobileToggle = document.getElementById("mobileToggle");
 mobileToggle.onclick = () => {
@@ -9,6 +10,8 @@ const adminControls = document.getElementById("adminControls");
 const bioSpan = document.getElementById("bio");
 const channelList = document.getElementById("channels");
 const channelMentionSet = new Set();
+const pollDrawFns = new Map();
+const pollRevealed = new Set();
 const chatInput = document.getElementById("chatInput");
 const chatLog = document.getElementById("chatLog");
 const downloadBtn = document.createElement("a");
@@ -34,8 +37,73 @@ const usernameSpan = document.getElementById("username");
 const verifiedMessage = document.createElement("div");
 const verifiedOverlay = document.createElement("div");
 const viewerImg = document.createElement("img");
+const tabGlobalBtn = document.getElementById("tabGlobalBtn");
+const tabPrivateBtn = document.getElementById("tabPrivateBtn");
+const globalSection = document.getElementById("globalSection");
+const privateSection = document.getElementById("privateSection");
+const privateMenu = document.getElementById("privateMenu");
+const dmUsernameInput = document.getElementById("dmUsernameInput");
+const dmStartBtn = document.getElementById("dmStartBtn");
+const groupNameInput = document.getElementById("groupNameInput");
+const groupCreateBtn = document.getElementById("groupCreateBtn");
+const groupInviteInput = document.getElementById("groupInviteInput");
+const groupJoinBtn = document.getElementById("groupJoinBtn");
+const channelTopBarName = document.getElementById("channelTopBarName");
+const channelTopBarStatus = document.createElement("span");
+channelTopBarStatus.id = "channelTopBarStatus";
+channelTopBarStatus.style.marginLeft = "8px";
+channelTopBarStatus.style.fontSize = "0.85em";
+channelTopBarStatus.style.opacity = "0.8";
+channelTopBarStatus.style.display = "none";
+channelTopBarStatus.style.alignItems = "center";
+channelTopBarStatus.style.gap = "4px";
+if (channelTopBarName && channelTopBarName.parentNode) {
+    channelTopBarName.parentNode.appendChild(channelTopBarStatus);
+}
+const pinnedMessagesWrap = document.getElementById("pinnedMessagesWrap");
+const pinnedMessagesBtn = document.getElementById("pinnedMessagesBtn");
+const pinnedMessagesPanel = document.getElementById("pinnedMessagesPanel");
+const pinnedMessagesList = document.getElementById("pinnedMessagesList");
+const pinnedMessagesCloseBtn = document.getElementById("pinnedMessagesCloseBtn");
+const groupInfoBtn = document.getElementById("groupInfoBtn");
+const groupInfoPanel = document.getElementById("groupInfoPanel");
+const groupInfoCloseBtn = document.getElementById("groupInfoCloseBtn");
+const groupInfoName = document.getElementById("groupInfoName");
+const groupInfoInviteLink = document.getElementById("groupInfoInviteLink");
+const groupInfoInviteCode = document.getElementById("groupInfoInviteCode");
+const groupInfoOwnerActions = document.getElementById("groupInfoOwnerActions");
+const groupInfoLeaveActions = document.getElementById("groupInfoLeaveActions");
+const groupInfoMembers = document.getElementById("groupInfoMembers");
+const groupRenameBtn = document.getElementById("groupRenameBtn");
+const groupResetInviteBtn = document.getElementById("groupResetInviteBtn");
+const groupTransferBtn = document.getElementById("groupTransferBtn");
+const groupDeleteBtn = document.getElementById("groupDeleteBtn");
+const groupLeaveBtn = document.getElementById("groupLeaveBtn");
+const statusRow = document.getElementById("statusRow");
+const statusIcon = document.getElementById("statusIcon");
+const statusLabel = document.getElementById("statusLabel");
+const statusDropdown = document.getElementById("statusDropdown");
+const statusOptions = document.querySelectorAll(".statusOption");
+const STATUS_META = {
+    online: { icon: "ib ic ic-online", label: "Online" },
+    idle: { icon: "ib ic ic-idle", label: "Idle" },
+    dnd: { icon: "ib ic ic-dnd", label: "Do Not Disturb" },
+    invisible: { icon: "ib ic ic-offline", label: "Invisible" }
+};
+const PRESENCE_META = {
+    online: { icon: "ib ic ic-online", title: "Online" },
+    idle: { icon: "ib ic ic-idle", title: "Idle" },
+    dnd: { icon: "ib ic ic-dnd", title: "Do Not Disturb" },
+    offline: { icon: "ib ic ic-offline", title: "Offline" }
+};
+let currentStatus = "online";
+let manualStatus = "online";
+let idleWatcher = null;
+if (statusDropdown) statusDropdown.style.display = "none";
 let activeListenersCount = 0;
 let allUsernames = [];
+let mentionableUsernames = [];
+let mentionLoadToken = 0;
 let authReady = false;
 let autoScrollEnabled = true;
 let pendingAttachFile = null;
@@ -49,7 +117,16 @@ let currentPath = null;
 let currentPrivateName = null;
 let currentPrivateUid = null;
 let currentUser = null;
+let currentGroupId = null;
+let currentGroupOwnerUid = null;
+let currentGroupName = null;
+let groupPollTimer = null;
+let myGroupsCache = [];
+let renderedGroupMsgIds = new Set();
+let currentGroupMessagesCache = {};
+let currentSidebarTab = "global";
 let isGuest = false;
+const knownUserDisplayNames = new Set();
 window.isGuest = isGuest;
 window.currentUser = currentUser;
 document.getElementById("profileRow").addEventListener("click", () => {
@@ -57,7 +134,21 @@ document.getElementById("profileRow").addEventListener("click", () => {
         window.location.href = "InfiniteAccounts.html?chat=true";
     }
 });
-let anonSessionToken = localStorage.getItem("anonSessionToken") || null;
+function getOrCreateAnonDeviceId() {
+    const STORAGE_KEY = "anonSessionToken";
+    try {
+        let id = localStorage.getItem(STORAGE_KEY);
+        if (id) return id;
+        id = (typeof crypto !== "undefined" && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : "anon-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+        localStorage.setItem(STORAGE_KEY, id);
+        return id;
+    } catch (e) {
+        return "anon-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+    }
+}
+let anonSessionToken = getOrCreateAnonDeviceId();
 let anonDisplayName = localStorage.getItem("anonDisplayName") || "Anonymous";
 let hasMoreMessages = true;
 let isAdmin = false;
@@ -84,7 +175,7 @@ let loadingOlderMessages = false;
 let mentionActive = false;
 let metadataListenerRef = null;
 let oldestLoadedTimestamp = null;
-let pfpDomain = "/pfps";
+const pfpDomain = `${a}/pfps`;
 let renderingChannels = false;
 let replyMsgId = null;
 let replyMsgName = null;
@@ -202,6 +293,44 @@ const MAX_REACTIONS_PER_USER = 20;
         .badge-popover:hover {
             display: flex;
         }
+        .mention, .discord-mention, .discord-role-mention, .mention-self {
+            background: rgba(88,101,242,0.15);
+            border-radius: 4px;
+            padding: 0px 3px;
+            font-weight: 500;
+            cursor: default;
+        }
+        .mention-self {
+            background: rgba(250,166,26,0.22);
+            color: #faa61a;
+        }
+        .discord-mention {
+            color: #7289da;
+        }
+        .discord-channel-mention {
+            background: rgba(79,163,255,0.15);
+            border-radius: 4px;
+            padding: 0px 3px;
+            color: #4fa3ff;
+            font-weight: 500;
+            cursor: default;
+        }
+        .channel-mention {
+            cursor: pointer;
+        }
+        .discord-channel-mention[data-website-channel] {
+            cursor: pointer;
+        }
+        .discord-channel-mention[data-website-channel]:hover {
+            text-decoration: underline;
+        }
+        .discord-timestamp {
+            background: rgba(255,255,255,0.06);
+            border-radius: 4px;
+            padding: 0px 4px;
+            color: #dcddde;
+            cursor: default;
+        }
     `;
     document.head.appendChild(style);
 })();
@@ -251,7 +380,22 @@ function showEmojiPicker(event, msgId) {
     }, 0);
 }
 async function toggleReaction(msgId, emoji) {
-    if (!currentUser || !currentPath) return;
+    if (!currentUser) return;
+    if (currentGroupId) {
+        try {
+            const json = await fetchAPI(`groups/${currentGroupId}/react`, { msgId, emoji });
+            if (currentGroupMessagesCache[msgId]) currentGroupMessagesCache[msgId].reactions = json.reactions;
+            const row = document.querySelector(`.reactions-row[data-msgid="${msgId}"]`);
+            if (row) {
+                row.dataset.reactionsKey = JSON.stringify(json.reactions || {});
+                renderReactionsInRow(row, json.reactions);
+            }
+        } catch (e) {
+            showError(e?.message || "Could Not React To Message");
+        }
+        return;
+    }
+    if (!currentPath) return;
     const pathParts = pathToArray(currentPath + "/" + msgId);
     try {
         const token = await getAuthToken();
@@ -293,14 +437,23 @@ async function getAuthToken() {
 async function fetchAPI(endpoint, body) {
     const token = await getAuthToken();
     const headers = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = "Bearer " + token;
+    let payload = body;
+    if (token) {
+        headers["Authorization"] = "Bearer " + token;
+    } else if (anonSessionToken) {
+        headers["x-anon-session"] = anonSessionToken;
+        payload = { ...(body || {}), anonSession: anonSessionToken };
+    }
     const res = await fetch(`${a}/${endpoint}`, {
         method: "POST",
         headers,
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
     });
     const json = await res.json();
     if (!res.ok) {
+        if (json?.banned) {
+            setBannedUI(true, json.reason, json.expiresAt);
+        }
         throw new Error(json?.error || "Request failed");
     }
     return json;
@@ -343,7 +496,8 @@ function dbListen(path, callback, type = "others") {
     return getAuthToken().then(token => {
         const pathArray = path.split("/");
         const tokenParam = token ? `&token=${token}` : "";
-        const wsUrl = `${h}/?path=${encodeURIComponent(JSON.stringify(pathArray))}${tokenParam}`;
+        const anonParam = (!token && anonSessionToken) ? `&anonSession=${encodeURIComponent(anonSessionToken)}` : "";
+        const wsUrl = `${h}/?path=${encodeURIComponent(JSON.stringify(pathArray))}${tokenParam}${anonParam}`;
         const ws = new WebSocket(wsUrl);
         ws.onmessage = (event) => {
             if (!event.data) return;
@@ -419,9 +573,6 @@ downloadBtn.style.cursor = "pointer";
 imgViewer.appendChild(viewerImg);
 imgViewer.appendChild(downloadBtn);
 document.body.appendChild(imgViewer);
-if (!(e.includes(window.location.host))) {
-    pfpDomain = "https://raw.githubusercontent.com/InfiniteCampus41/InfiniteCampus/refs/heads/main/pfps"; 
-}
 viewerImg.addEventListener("click", () => {
     zoomed = !zoomed;
     viewerImg.style.transform = zoomed ? "scale(2)" : "scale(1)";
@@ -439,6 +590,133 @@ typingIndicator.style.color = "#aaa";
 typingIndicator.style.marginTop = "4px";
 typingIndicator.style.display = "none";
 reply.insertAdjacentElement("beforebegin", typingIndicator);
+const chatLockdownNotice = document.createElement("div");
+chatLockdownNotice.id = "chatLockdownNotice";
+chatLockdownNotice.style.display = "none";
+chatLockdownNotice.style.flex = "1";
+chatLockdownNotice.style.flexDirection = "column";
+chatLockdownNotice.style.alignItems = "center";
+chatLockdownNotice.style.justifyContent = "center";
+chatLockdownNotice.style.textAlign = "center";
+chatLockdownNotice.style.padding = "20px";
+chatLockdownNotice.innerHTML = `
+    <div style="font-weight:bold;font-size:1.15em;color:#eee;">The Chat Has Been Locked Down</div>
+    <div style="margin-top:6px;color:#aaa;">Please Come Back Later</div>
+`;
+chatLog.insertAdjacentElement("afterend", chatLockdownNotice);
+let chatLockedDown = false;
+function setChatLockdownUI(locked) {
+    chatLockedDown = !!locked;
+    if (chatLockedDown) {
+        chatLog.style.display = "none";
+        chatLockdownNotice.style.display = "flex";
+        if (!sendBtn.disabled) sendBtn.dataset.lockdownDisabled = "1";
+        sendBtn.disabled = true;
+        if (!chatInput.disabled) chatInput.dataset.lockdownDisabled = "1";
+        chatInput.disabled = true;
+    } else if (isBanned)  {
+        chatLog.style.display = "none";
+    } else {
+        chatLog.style.display = "";
+        chatLockdownNotice.style.display = "none";
+        if (sendBtn.dataset.lockdownDisabled === "1") {
+            sendBtn.disabled = false;
+            delete sendBtn.dataset.lockdownDisabled;
+        }
+        if (chatInput.dataset.lockdownDisabled === "1") {
+            chatInput.disabled = false;
+            delete chatInput.dataset.lockdownDisabled;
+        }
+    }
+}
+(async function initChatLockdownStatus() {
+    try {
+        const res = await fetch(`${BACKEND}/discord_chat_lockdown_status_x9a7b2`);
+        const json = await res.json();
+        setChatLockdownUI(!!json?.locked);
+    } catch (e) {
+        console.warn("Failed To Load Chat Lockdown Status:", e);
+    }
+    try {
+        const lockdownStream = new EventSource(`${BACKEND}/discord_chat_lockdown_stream_x9a7b2`);
+        lockdownStream.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                setChatLockdownUI(!!data?.locked);
+            } catch {}
+        };
+        lockdownStream.onerror = () => {};
+    } catch (e) {
+        console.warn("Failed To Connect To Chat Lockdown Stream:", e);
+    }
+    setInterval(async () => {
+        try {
+            const res = await fetch(`${BACKEND}/discord_chat_lockdown_status_x9a7b2`);
+            const json = await res.json();
+            setChatLockdownUI(!!json?.locked);
+        } catch (e) {}
+    }, 15000);
+})();
+const banOverlay = document.createElement("div");
+banOverlay.id = "banOverlay";
+banOverlay.innerHTML = `
+    <div class="banTitle">You Have Been Banned</div>
+    <div class="banReason" id="banReasonText"></div>
+    <div class="banExpires" id="banExpiresText"></div>
+`;
+chatLog.insertAdjacentElement("afterend", banOverlay);
+let isBanned = false;
+function formatBanExpiry(expiresAt) {
+    if (!expiresAt) return "This Ban Does Not Expire.";
+    const ms = expiresAt - Date.now();
+    if (ms <= 0) return "";
+    const hours = Math.ceil(ms / 3600000);
+    return `This Ban Expires In About ${hours} Hour${hours === 1 ? "" : "s"}.`;
+}
+function setBannedUI(banned, reason, expiresAt) {
+    isBanned = !!banned;
+    if (isBanned) {
+        chatLog.style.display = "none";
+        chatLockdownNotice.style.display = "none";
+        banOverlay.style.display = "flex";
+        document.getElementById("banReasonText").textContent = reason ? `Reason: ${reason}` : "";
+        document.getElementById("banExpiresText").textContent = formatBanExpiry(expiresAt);
+        if (!sendBtn.disabled) sendBtn.dataset.lockdownDisabled = "1";
+        sendBtn.disabled = true;
+        if (!chatInput.disabled) chatInput.dataset.lockdownDisabled = "1";
+        chatInput.disabled = true;
+    } else {
+        banOverlay.style.display = "none";
+        if (!chatLockedDown) {
+            chatLog.style.display = "";
+            if (sendBtn.dataset.lockdownDisabled === "1") {
+                sendBtn.disabled = false;
+                delete sendBtn.dataset.lockdownDisabled;
+            }
+            if (chatInput.dataset.lockdownDisabled === "1") {
+                chatInput.disabled = false;
+                delete chatInput.dataset.lockdownDisabled;
+            }
+        }
+    }
+}
+(async function initBanStatus() {
+    async function checkBanStatus() {
+        try {
+            const token = await getAuthToken();
+            const headers = {};
+            if (token) headers["Authorization"] = "Bearer " + token;
+            else if (anonSessionToken) headers["x-anon-session"] = anonSessionToken;
+            const res = await fetch(`${BACKEND}/ban-status`, { headers });
+            const json = await res.json();
+            setBannedUI(!!json?.banned, json?.reason, json?.expiresAt);
+        } catch (e) {
+            console.warn("Failed To Load Ban Status:", e);
+        }
+    }
+    await checkBanStatus();
+    setInterval(checkBanStatus, 15000);
+})();
 chatLog.addEventListener("scroll", () => {
     const distanceFromBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight;
     autoScrollEnabled = distanceFromBottom < 40;
@@ -447,7 +725,7 @@ chatLog.addEventListener("scroll", () => {
     }
 });
 async function loadOlderMessages() {
-    if (loadingOlderMessages || !hasMoreMessages || !oldestLoadedTimestamp) return;
+    if (loadingOlderMessages || !hasMoreMessages || !oldestLoadedTimestamp || !currentPath) return;
     loadingOlderMessages = true;
     let loadingBar = document.getElementById("__loadMoreIndicator");
     if (!loadingBar) {
@@ -545,6 +823,68 @@ async function unmuteUser(uid) {
     delete userMetaCache[uid];
     showSuccess("User Unmuted.");
 }
+async function adminGetBanStatus(banId) {
+    try {
+        const token = await getAuthToken();
+        const res = await fetch(`${BACKEND}/moderation/ban-status/${encodeURIComponent(banId)}`, {
+            headers: { "Authorization": "Bearer " + token }
+        });
+        return await res.json();
+    } catch {
+        return { banned: false };
+    }
+}
+async function adminBanTarget(banId, { anon = false } = {}) {
+    const reason = await customPrompt(anon ? "Reason For Ban (12 Hours):" : "Reason For Ban:", false, "");
+    if (reason === null || reason === undefined || !String(reason).trim()) {
+        showSuccess("Canceled");
+        return false;
+    }
+    try {
+        const token = await getAuthToken();
+        const body = anon
+            ? { anonSessionToken: banId.replace(/^anon:/, ""), reason: String(reason).trim() }
+            : { targetUid: banId, reason: String(reason).trim() };
+        const res = await fetch(`${BACKEND}/moderation/ban`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+            body: JSON.stringify(body)
+        });
+        const out = await res.json();
+        if (!out.success) {
+            showError("Failed: " + (out.error || "Unknown Error"));
+            return false;
+        }
+        showSuccess(anon ? "Anonymous User Banned For 12 Hours." : "User Banned.");
+        return true;
+    } catch (err) {
+        console.error(err);
+        showError("Error Occurred");
+        return false;
+    }
+}
+async function adminUnbanTarget(banId, { anon = false } = {}) {
+    try {
+        const token = await getAuthToken();
+        const body = anon ? { anonSessionToken: banId.replace(/^anon:/, "") } : { targetUid: banId };
+        const res = await fetch(`${BACKEND}/moderation/unban`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+            body: JSON.stringify(body)
+        });
+        const out = await res.json();
+        if (!out.success) {
+            showError("Failed: " + (out.error || "Unknown Error"));
+            return false;
+        }
+        showSuccess("User Unbanned.");
+        return true;
+    } catch (err) {
+        console.error(err);
+        showError("Error Occurred");
+        return false;
+    }
+}
 async function getUserMeta(uid) {
     if (userMetaCache[uid]) return userMetaCache[uid];
     const [profile, settings, muteData] = await Promise.all([
@@ -581,10 +921,30 @@ async function getUserMeta(uid) {
         lanschool: !!p.lanschool,
         linewize: !!p.linewize,
         blocksi: !!p.blocksi,
-        online: !!p.online
+        fortiguard: !!p.fortiguard,
+        lightspeed: !!p.lightspeed,
+        cisco: !!p.cisco,
+        contentkeeper: !!p.contentkeeper,
+        deledao: !!p.deledao,
+        iboss: !!p.iboss,
+        barracuda: !!p.barracuda,
+        status: (p.status && STATUS_META[p.status]) ? p.status : "offline"    
     };
     userMetaCache[uid] = data;
     return data;
+}
+async function getProfilePicUrl(uid) {
+    if (!uid) return `${pfpDomain}/1.jpeg`;
+    return `${pfpDomain}/${uid}?t=${Date.now()}`;
+}
+function resortPrivateList() {
+    const items = Array.from(privateList.children);
+    items.sort((a, b) => {
+        const ta = Number(a.dataset.lastActivity || 0);
+        const tb = Number(b.dataset.lastActivity || 0);
+        return tb - ta;
+    });
+    for (const item of items) privateList.appendChild(item);
 }
 async function isUserMuted(uid) {
     const data = dbGet(`mutedUsers/${uid}`);
@@ -656,6 +1016,138 @@ async function loadMentionSetting(user) {
         mentionToggle.checked = true;
     }
 }
+function applyStatusUI(status) {
+    const meta = STATUS_META[status] || STATUS_META.online;
+    if (statusIcon) statusIcon.className = meta.icon;
+    if (statusLabel) statusLabel.textContent = meta.label;
+    statusOptions.forEach(opt => {
+        const match = opt.dataset.status === status;
+        opt.classList.toggle("active", match);
+        const check = opt.querySelector(".statusCheck");
+        if (check) check.style.visibility = match ? "visible" : "hidden";
+    });
+}
+function toggleStatusDropdown(forceState) {
+    if (!statusDropdown) return;
+    const isOpen = typeof forceState === "boolean" ? forceState : statusDropdown.style.display === "none";
+    statusDropdown.style.display = isOpen ? "block" : "none";
+}
+function effectivePresence(status) {
+    if (status === "offline") return "offline";
+    return PRESENCE_META[status] ? status : "offline";
+}
+let topBarStatusValue = "offline";
+let topBarStatusPollTimer = null;
+function renderTopBarStatus() {
+    if (!channelTopBarStatus) return;
+    if (!currentPrivateUid) {
+        channelTopBarStatus.style.display = "none";
+        return;
+    }
+    const meta = PRESENCE_META[topBarStatusValue] || PRESENCE_META.offline;
+    channelTopBarStatus.innerHTML = `<i class="${meta.icon}"></i><span>${meta.title}</span>`;
+    channelTopBarStatus.style.display = "inline-flex";
+}
+async function refreshTopBarStatus(uid) {
+    try {
+        const p = await dbGet(`users/${uid}/profile`);
+        if (currentPrivateUid !== uid) return;
+        const val = p && p.status;
+        topBarStatusValue = (val && PRESENCE_META[val]) ? val : "offline";
+    } catch (e) {
+        if (currentPrivateUid !== uid) return;
+        topBarStatusValue = "offline";
+    }
+    renderTopBarStatus();
+}
+function watchTopBarStatus(uid) {
+    if (topBarStatusPollTimer) {
+        clearInterval(topBarStatusPollTimer);
+        topBarStatusPollTimer = null;
+    }
+    if (!uid) {
+        if (channelTopBarStatus) channelTopBarStatus.style.display = "none";
+        return;
+    }
+    refreshTopBarStatus(uid);
+    topBarStatusPollTimer = setInterval(() => refreshTopBarStatus(uid), 60000);
+}
+if (statusRow) {
+    statusRow.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!currentUser || isGuest) return;
+        toggleStatusDropdown();
+    });
+}
+statusOptions.forEach(opt => {
+    opt.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!currentUser || isGuest) return;
+        const newStatus = opt.dataset.status;
+        if (!STATUS_META[newStatus]) return;
+        toggleStatusDropdown(false);
+        manualStatus = newStatus;
+        if (newStatus === currentStatus) return;
+        currentStatus = newStatus;
+        applyStatusUI(newStatus);
+        try {
+            await dbSet(`users/${currentUser.uid}/profile/status`, newStatus);
+        } catch (err) {
+            showError("Failed To Save Status:", err);
+        }
+    });
+});
+document.addEventListener("click", (e) => {
+    if (statusDropdown && statusDropdown.style.display !== "none" && !statusDropdown.contains(e.target) && e.target !== statusIcon && e.target !== statusLabel) {
+        toggleStatusDropdown(false);
+    }
+});
+async function loadUserStatus(user) {
+    if (!statusRow) return;
+    try {
+        const val = await dbGet(`users/${user.uid}/profile/status`);
+        if (val && STATUS_META[val]) {
+            currentStatus = val;
+        } else {
+            currentStatus = "online";
+            await dbSet(`users/${user.uid}/profile/status`, "online");
+        }
+    } catch (err) {
+        showError("Failed To Load Status:", err);
+        currentStatus = "online";
+    }
+    manualStatus = currentStatus;
+    applyStatusUI(currentStatus);
+    statusRow.style.display = "flex";
+    startIdleWatcher(user);
+}
+function startIdleWatcher(user) {
+    if (idleWatcher) {
+        idleWatcher.stop();
+        idleWatcher = null;
+    }
+    idleWatcher = createIdleWatcher({
+        getManualStatus: () => manualStatus,
+        onAutoIdle: async () => {
+            currentStatus = "idle";
+            applyStatusUI(currentStatus);
+            try {
+                await dbSet(`users/${user.uid}/profile/status`, "idle");
+            } catch (err) {
+                showError("Failed To Save Status:", err);
+            }
+        },
+        onAutoResume: async () => {
+            currentStatus = manualStatus;
+            applyStatusUI(currentStatus);
+            try {
+                await dbSet(`users/${user.uid}/profile/status`, manualStatus);
+            } catch (err) {
+                showError("Failed To Save Status:", err);
+            }
+        }
+    });
+}
 async function getDisplayName(uid) {
     let dn = await dbGet(`users/${uid}/profile/displayName`);
     if (!dn || dn.trim() === "") dn = "Spam Account";
@@ -693,6 +1185,172 @@ async function processChannelMentions(htmlText) {
             return `#${chName}`;
         }
     });
+}
+const discordUserLookupCache = {};
+const discordUserLookupPending = {};
+async function resolveDiscordUserIds(ids) {
+    const toFetch = ids.filter(id => !(id in discordUserLookupCache) && !(id in discordUserLookupPending));
+    if (toFetch.length) {
+        const promise = (async () => {
+            try {
+                const res = await fetch(`${BACKEND}/discord-user-lookup`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ids: toFetch })
+                });
+                const json = await res.json().catch(() => ({}));
+                for (const id of toFetch) {
+                    discordUserLookupCache[id] = (res.ok && json?.users) ? (json.users[id] || null) : null;
+                }
+            } catch {
+                for (const id of toFetch) discordUserLookupCache[id] = null;
+            } finally {
+                for (const id of toFetch) delete discordUserLookupPending[id];
+            }
+        })();
+        toFetch.forEach(id => { discordUserLookupPending[id] = promise; });
+    }
+    const waitFor = ids.map(id => discordUserLookupPending[id]).filter(Boolean);
+    if (waitFor.length) await Promise.all([...new Set(waitFor)]);
+}
+const discordChannelLookupCache = {};
+const discordChannelLookupPending = {};
+async function resolveDiscordChannelIds(ids) {
+    const toFetch = ids.filter(id => !(id in discordChannelLookupCache) && !(id in discordChannelLookupPending));
+    if (toFetch.length) {
+        const promise = (async () => {
+            try {
+                const res = await fetch(`${BACKEND}/discord-channel-lookup`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ids: toFetch })
+                });
+                const json = await res.json().catch(() => ({}));
+                for (const id of toFetch) {
+                    discordChannelLookupCache[id] = (res.ok && json?.channels) ? (json.channels[id] || null) : null;
+                }
+            } catch {
+                for (const id of toFetch) discordChannelLookupCache[id] = null;
+            } finally {
+                for (const id of toFetch) delete discordChannelLookupPending[id];
+            }
+        })();
+        toFetch.forEach(id => { discordChannelLookupPending[id] = promise; });
+    }
+    const waitFor = ids.map(id => discordChannelLookupPending[id]).filter(Boolean);
+    if (waitFor.length) await Promise.all([...new Set(waitFor)]);
+}
+const discordRoleLookupCache = {};
+const discordRoleLookupPending = {};
+async function resolveDiscordRoleIds(ids) {
+    const toFetch = ids.filter(id => !(id in discordRoleLookupCache) && !(id in discordRoleLookupPending));
+    if (toFetch.length) {
+        const promise = (async () => {
+            try {
+                const res = await fetch(`${BACKEND}/discord-role-lookup`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ids: toFetch })
+                });
+                const json = await res.json().catch(() => ({}));
+                for (const id of toFetch) {
+                    discordRoleLookupCache[id] = (res.ok && json?.roles) ? (json.roles[id] || null) : null;
+                }
+            } catch {
+                for (const id of toFetch) discordRoleLookupCache[id] = null;
+            } finally {
+                for (const id of toFetch) delete discordRoleLookupPending[id];
+            }
+        })();
+        toFetch.forEach(id => { discordRoleLookupPending[id] = promise; });
+    }
+    const waitFor = ids.map(id => discordRoleLookupPending[id]).filter(Boolean);
+    if (waitFor.length) await Promise.all([...new Set(waitFor)]);
+}
+function formatDiscordRelativeTime(d) {
+    const diffSec = Math.round((d.getTime() - Date.now()) / 1000);
+    const abs = Math.abs(diffSec);
+    const units = [
+        ["year", 31536000], ["month", 2592000], ["week", 604800],
+        ["day", 86400], ["hour", 3600], ["minute", 60], ["second", 1]
+    ];
+    for (const [name, secs] of units) {
+        if (abs >= secs || name === "second") {
+            const val = Math.round(diffSec / secs);
+            try {
+                return new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(val, name);
+            } catch {
+                return d.toLocaleString();
+            }
+        }
+    }
+    return d.toLocaleString();
+}
+function formatDiscordTimestamp(unixSeconds, style) {
+    const d = new Date(unixSeconds * 1000);
+    if (isNaN(d.getTime())) return null;
+    if (style === "R") return formatDiscordRelativeTime(d);
+    const optsByStyle = {
+        t: { hour: "2-digit", minute: "2-digit" },
+        T: { hour: "2-digit", minute: "2-digit", second: "2-digit" },
+        d: { year: "numeric", month: "2-digit", day: "2-digit" },
+        D: { year: "numeric", month: "long", day: "numeric" },
+        f: { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" },
+        F: { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }
+    };
+    const opts = optsByStyle[style] || optsByStyle.f;
+    return d.toLocaleString([], opts);
+}
+async function processDiscordMentions(htmlText) {
+    if (!htmlText) return htmlText;
+    if (htmlText.indexOf("&lt;@") !== -1) {
+        const roleMentionRegex = /&lt;@&amp;(\d{5,25})&gt;/g;
+        const roleIds = [...new Set([...htmlText.matchAll(roleMentionRegex)].map(m => m[1]))];
+        if (roleIds.length) {
+            await resolveDiscordRoleIds(roleIds);
+            htmlText = htmlText.replace(roleMentionRegex, (match, id) => {
+                const role = discordRoleLookupCache[id];
+                if (!role) return match;
+                const color = role.color ? `#${Number(role.color).toString(16).padStart(6, "0")}` : "#5865F2";
+                return `<span class="mention discord-role-mention" data-discord-role-id="${id}" style="color:${color};" title="Discord Role">@${role.name}</span>`;
+            });
+        }
+        const userMentionRegex = /&lt;@!?(\d{5,25})&gt;/g;
+        const userIds = [...new Set([...htmlText.matchAll(userMentionRegex)].map(m => m[1]))];
+        if (userIds.length) {
+            await resolveDiscordUserIds(userIds);
+            htmlText = htmlText.replace(userMentionRegex, (match, id) => {
+                const username = discordUserLookupCache[id];
+                if (!username) return match;
+                return `<span class="mention discord-mention" data-discord-id="${id}" title="Discord User">@${username}</span>`;
+            });
+        }
+    }
+    if (htmlText.indexOf("&lt;#") !== -1) {
+        const channelMentionRegex = /&lt;#(\d{5,25})&gt;/g;
+        const channelIds = [...new Set([...htmlText.matchAll(channelMentionRegex)].map(m => m[1]))];
+        if (channelIds.length) {
+            await resolveDiscordChannelIds(channelIds);
+            htmlText = htmlText.replace(channelMentionRegex, (match, id) => {
+                const ch = discordChannelLookupCache[id];
+                if (!ch || !ch.name) return match;
+                if (ch.websiteChannel) {
+                    return `<span class="mention discord-channel-mention" data-discord-channel-id="${id}" data-website-channel="${ch.websiteChannel}" title="Go To The ${ch.websiteChannel} Channel">#${ch.name}</span>`;
+                }
+                return `<span class="mention discord-channel-mention" data-discord-channel-id="${id}" title="Discord Channel">#${ch.name}</span>`;
+            });
+        }
+    }
+    if (htmlText.indexOf("&lt;t:") !== -1) {
+        const timestampRegex = /&lt;t:(-?\d+)(?::([tTdDfFR]))?&gt;/g;
+        htmlText = htmlText.replace(timestampRegex, (match, unix, style) => {
+            const display = formatDiscordTimestamp(Number(unix), style || "f");
+            if (!display) return match;
+            const fullDate = new Date(Number(unix) * 1000).toLocaleString();
+            return `<span class="discord-timestamp" title="${fullDate}">${display}</span>`;
+        });
+    }
+    return htmlText;
 }
 function clearChannelMention(channelName) {
     channelMentionSet.delete(channelName);
@@ -749,16 +1407,302 @@ function toggleReply(id = null, name = null, text = null) {
     lReply.textContent = `Replying To: @${name}`;
     const rReply = document.createElement("button");
     rReply.id = "exitReply";
-    rReply.innerHTML = `<i class="bi bi-x-circle"></i>`;
+    rReply.innerHTML = `<i class="ic ic-x-circle"></i>`;
     rReply.onclick = () => toggleReply();
     reply.appendChild(lReply);
     reply.appendChild(rReply);
     isReplyActive = true;
 }
+function openPollCreateModal(channel) {
+    const old = document.querySelector(".poll-create-overlay");
+    if (old) old.remove();
+    const overlay = document.createElement("div");
+    overlay.className = "poll-create-overlay";
+    overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:10000;";
+    const box = document.createElement("div");
+    box.style.cssText = "background:#222;border:1px solid #444;border-radius:10px;padding:20px;width:420px;max-width:92vw;max-height:85vh;overflow-y:auto;color:#fff;";
+    box.innerHTML = `
+        <h2 style="margin:0 0 14px 0;">
+            Create A Poll
+        </h2>
+        <label style="font-size:0.8em;color:#aaa;">
+            Question
+        </label>
+        <input id="pollQuestionInput" type="text" maxlength="300" placeholder="Ask A Question..." style="width:100%;box-sizing:border-box;background:#121212;color:#fff;border:1px solid #555;border-radius:6px;padding:8px;margin:4px 0 14px 0;">
+        <label style="font-size:0.8em;color:#aaa;">
+            Answers
+        </label>
+        <div id="pollAnswersList" style="display:flex;flex-direction:column;gap:6px;margin:4px 0 8px 0;">
+        </div>
+        <button id="pollAddAnswerBtn" type="button" style="background:none;border:1px dashed #555;color:#aaa;border-radius:6px;padding:6px;cursor:pointer;width:100%;margin-bottom:14px;">
+            + Add Answer
+        </button>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;">
+            <input id="pollMultiCheckbox" type="checkbox">
+            Allow Users To Select Multiple Answers
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;cursor:pointer;">
+            <input id="pollChangeVoteCheckbox" type="checkbox">
+            Allow Users To Change Their Vote
+        </label>
+        <label style="font-size:0.8em;color:#aaa;">Poll Duration</label>
+        <select id="pollDurationSelect" style="width:100%;box-sizing:border-box;background:#121212;color:#fff;border:1px solid #555;border-radius:6px;padding:8px;margin:4px 0 18px 0;">
+            <option value="1800000">
+                30 Minutes
+            </option>
+            <option value="3600000" selected>
+                1 Hour
+            </option>
+            <option value="14400000">
+                4 Hours
+            </option>
+            <option value="28800000">
+                8 Hours
+            </option>
+            <option value="86400000">
+                1 Day
+            </option>
+            <option value="259200000">
+                3 Days
+            </option>
+            <option value="604800000">
+                1 Week
+            </option>
+            <option value="1209600000">
+                2 Weeks
+            </option>
+        </select>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button id="pollCancelBtn" type="button" style="background:none;border:1px solid #555;color:#fff;border-radius:6px;padding:8px 16px;cursor:pointer;">
+                Cancel
+            </button>
+            <button id="pollCreateBtn" class="ic-accent-bg" type="button" style="border:none;border-radius:6px;padding:8px 16px;cursor:pointer;">
+                Create Poll
+            </button>
+        </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const answersList = box.querySelector("#pollAnswersList");
+    const addAnswerBtn = box.querySelector("#pollAddAnswerBtn");
+    const MAX_ANSWERS = 10;
+    function addAnswerRow(prefill) {
+        if (answersList.children.length >= MAX_ANSWERS) return;
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;gap:6px;align-items:center;";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.maxLength = 200;
+        input.placeholder = "Add An Answer (Supports [Label](URL) Links)";
+        input.value = prefill || "";
+        input.style.cssText = "flex:1;background:#121212;color:#fff;border:1px solid #555;border-radius:6px;padding:8px;box-sizing:border-box;";
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.innerHTML = "&times;";
+        removeBtn.title = "Remove Answer";
+        removeBtn.style.cssText = "background:none;border:none;color:#aaa;font-size:1.2em;cursor:pointer;padding:2px 8px;";
+        removeBtn.onclick = () => {
+            if (answersList.children.length <= 2) return;
+            row.remove();
+            addAnswerBtn.style.display = answersList.children.length >= MAX_ANSWERS ? "none" : "block";
+        };
+        row.appendChild(input);
+        row.appendChild(removeBtn);
+        answersList.appendChild(row);
+        addAnswerBtn.style.display = answersList.children.length >= MAX_ANSWERS ? "none" : "block";
+    }
+    addAnswerRow();
+    addAnswerRow();
+    addAnswerBtn.onclick = () => addAnswerRow();
+    box.querySelector("#pollCancelBtn").onclick = () => overlay.remove();
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    box.querySelector("#pollCreateBtn").onclick = async () => {
+        const question = box.querySelector("#pollQuestionInput").value.trim();
+        if (!question) { showError("Please Enter A Poll Question."); return; }
+        const answers = Array.from(answersList.querySelectorAll("input"))
+            .map(inp => inp.value.trim())
+            .filter(Boolean);
+        if (answers.length < 2) { showError("Please Enter At Least 2 Answers."); return; }
+        const multi = box.querySelector("#pollMultiCheckbox").checked;
+        const allowChangeVote = box.querySelector("#pollChangeVoteCheckbox").checked;
+        const durationMs = Number(box.querySelector("#pollDurationSelect").value);
+        const createBtn = box.querySelector("#pollCreateBtn");
+        createBtn.disabled = true;
+        createBtn.textContent = "Creating...";
+        try {
+            await fetchAPI("poll/create", { channel, question, answers, multi, allowChangeVote, durationMs });
+            overlay.remove();
+        } catch (err) {
+            showError(err?.message || "Failed To Create Poll.");
+            createBtn.disabled = false;
+            createBtn.textContent = "Create Poll";
+        }
+    };
+}
+function renderPollAnswerHtml(raw) {
+    let text = String(raw || "");
+    text = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    text = text.replace(/\[([^\[\]]{1,150})\]\((https?:\/\/[^\s()]{1,500})\)/g, (m, label, url) => {
+        const safeUrl = url.replace(/"/g, "&quot;");
+        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color:#4fa3ff;">${label}</a>`;
+    });
+    return text;
+}
+function pollTimeRemainingText(poll) {
+    if (poll.ended) return "Poll Ended";
+    const ms = poll.endsAt - Date.now();
+    if (ms <= 0) return "Poll Ended";
+    const mins = Math.ceil(ms / 60000);
+    if (mins < 60) return `${mins}m Left`;
+    const hours = Math.ceil(mins / 60);
+    if (hours < 24) return `${hours}h Left`;
+    const days = Math.ceil(hours / 24);
+    return `${days}d Left`;
+}
+async function renderPollMessage(id, msg) {
+    const div = document.createElement("div");
+    div.className = "msg msg-poll";
+    div.id = "msg-" + id;
+    div.dataset.timestamp = msg.timestamp || Number(id) || Date.now();
+    const topRow = document.createElement("div");
+    topRow.id = "topRow";
+    const leftWrapper = document.createElement("span");
+    leftWrapper.style.cssText = "display:flex;gap:6px;align-items:center;";
+    const profilePic = document.createElement("img");
+    profilePic.style.cssText = "width:32px;height:32px;border-radius:50%;border:2px solid var(--ic-accent);object-fit:cover;cursor:pointer;";
+    profilePic.src = `${pfpDomain}/1.jpeg`;
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "highlight";
+    nameSpan.textContent = "Loading...";
+    nameSpan.style.cursor = "pointer";
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "timestamp";
+    const tsMs = msg.timestamp || Number(id) || Date.now();
+    timeSpan.textContent = tsMs ? formatTimestamp(tsMs) : "";
+    leftWrapper.appendChild(profilePic);
+    leftWrapper.appendChild(nameSpan);
+    topRow.appendChild(leftWrapper);
+    topRow.appendChild(timeSpan);
+    div.appendChild(topRow);
+    const body = document.createElement("div");
+    body.className = "poll-body";
+    body.style.cssText = "margin-left:40px;margin-top:2px;background:#1b1b1f;border:1px solid #333;border-radius:10px;padding:12px 14px;max-width:420px;";
+    div.appendChild(body);
+    const container = document.getElementById("chatLog");
+    if (container) container.appendChild(div);
+    (async () => {
+        try {
+            const meta = await getUserMeta(msg.s);
+            nameSpan.textContent = meta.displayName || "User";
+            nameSpan.style.color = meta.color;
+            profilePic.src = `${pfpDomain}/${msg.s}?t=${Date.now()}`;
+            profilePic.style.border = `2px solid ${meta.color}`;
+            const openProfile = () => { window.location.href = `InfiniteAccounts.html?user=${msg.s}`; };
+            nameSpan.onclick = openProfile;
+            profilePic.onclick = openProfile;
+        } catch {}
+    })();
+    const isCreator = !!(currentUser && currentUser.uid === msg.s);
+    function draw(poll) {
+        body.innerHTML = "";
+        const qEl = document.createElement("div");
+        qEl.style.cssText = "font-weight:600;margin-bottom:10px;white-space:pre-wrap;overflow-wrap:anywhere;";
+        qEl.innerHTML = `<i class="ic ic-bar-chart-fill" style="margin-right:6px;color:var(--ic-accent);"></i>${renderPollAnswerHtml(poll.question)}`;
+        body.appendChild(qEl);
+        const myVotes = new Set();
+        for (const ans of poll.answers) {
+            if (ans.votes && currentUser && ans.votes[currentUser.uid]) myVotes.add(ans.id);
+        }
+        const hasVoted = myVotes.size > 0;
+        const showResults = poll.ended || hasVoted || pollRevealed.has(id);
+        const counts = {};
+        const voters = new Set();
+        for (const ans of poll.answers) {
+            counts[ans.id] = ans.votes ? Object.keys(ans.votes).length : 0;
+            for (const u of Object.keys(ans.votes || {})) voters.add(u);
+        }
+        const total = voters.size;
+        let max = 0;
+        for (const ans of poll.answers) if (counts[ans.id] > max) max = counts[ans.id];
+        for (const ans of poll.answers) {
+            const row = document.createElement("div");
+            row.className = "poll-answer-row" + (poll.ended ? " ended" : "");
+            row.style.cssText = "position:relative;border:1px solid #444;border-radius:8px;padding:8px 10px;margin-bottom:6px;overflow:hidden;cursor:" + (poll.ended ? "default" : "pointer") + ";transition:border-color 0.15s ease;";
+            const isWinner = poll.ended && max > 0 && counts[ans.id] === max;
+            if (isWinner) row.style.borderColor = "darkgoldenrod";
+            if (myVotes.has(ans.id)) row.style.background = "color-mix(in srgb, var(--ic-accent) 15%, transparent)";
+            if (showResults) {
+                const pct = total ? Math.round((counts[ans.id] / total) * 100) : 0;
+                const fill = document.createElement("div");
+                fill.style.cssText = `position:absolute;left:0;top:0;bottom:0;width:${pct}%;background:${isWinner ? "rgba(245,197,24,0.18)" : "rgba(255,255,255,0.06)"};z-index:0;`;
+                row.appendChild(fill);
+            }
+            const content = document.createElement("div");
+            content.style.cssText = "position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:8px;";
+            const label = document.createElement("span");
+            label.innerHTML = (myVotes.has(ans.id) ? `<i class="ic ic-check-circle-fill" style="color:var(--ic-accent);margin-right:6px;"></i>` : "")
+                + renderPollAnswerHtml(ans.text)
+                + (isWinner ? ' <span title="Winner"><i class="ic ic-trophy" style="color:darkgoldenrod"></i></span>' : "");
+            content.appendChild(label);
+            if (showResults) {
+                const pctSpan = document.createElement("span");
+                pctSpan.style.cssText = "color:#aaa;font-size:0.85em;white-space:nowrap;";
+                const pct = total ? Math.round((counts[ans.id] / total) * 100) : 0;
+                pctSpan.textContent = `${pct}% (${counts[ans.id]})`;
+                content.appendChild(pctSpan);
+            }
+            row.appendChild(content);
+            row.addEventListener("click", async (e) => {
+                if (e.target.closest("a")) return;
+                if (poll.ended) return;
+                if (!currentUser || isGuest) { showError("You Must Be Logged In To Use This Feature."); return; }
+                if (hasVoted && !poll.allowChangeVote) { showError("You Have Already Voted On This Poll."); return; }
+                let answerIds;
+                if (poll.multi) {
+                    const sel = new Set(myVotes);
+                    if (sel.has(ans.id)) sel.delete(ans.id); else sel.add(ans.id);
+                    answerIds = [...sel];
+                    if (!answerIds.length) return;
+                } else {
+                    answerIds = [ans.id];
+                }
+                try {
+                    const ch = currentPath ? currentPath.split("/")[1] : null;
+                    if (!ch) return;
+                    await fetchAPI("poll/vote", { channel: ch, id, answerIds });
+                } catch (err) {
+                    showError(err?.message || "Failed To Vote.");
+                }
+            });
+            body.appendChild(row);
+        }
+        const footer = document.createElement("div");
+        footer.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.78em;color:#888;";
+        const infoSpan = document.createElement("span");
+        infoSpan.textContent = `${total} Vote${total === 1 ? "" : "s"} · ${pollTimeRemainingText(poll)}${poll.multi ? " · Multiple Choice" : ""}`;
+        footer.appendChild(infoSpan);
+        if (isCreator && !showResults) {
+            const showVotesBtn = document.createElement("button");
+            showVotesBtn.textContent = "Show Votes";
+            showVotesBtn.style.cssText = "background:none;border:1px solid #555;color:#ccc;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:1em;";
+            showVotesBtn.onclick = (e) => {
+                e.stopPropagation();
+                pollRevealed.add(id);
+                draw(poll);
+            };
+            footer.appendChild(showVotesBtn);
+        }
+        body.appendChild(footer);
+    }
+    pollDrawFns.set(id, draw);
+    draw(msg.poll);
+    return div;
+}
 async function renderMessageInstant(id, msg) {
     if (document.getElementById("msg-" + id)) return null;
     if (id === "sender" || id === "text" || id === "timestamp" || id === "s" || id === "t") return null;
     if (!msg) return null;
+    if (msg.type === "poll" && msg.poll) return renderPollMessage(id, msg);
     const isDiscordMsg = !!(msg.u !== undefined && msg.a !== undefined);
     const isAnonMsg = !!(( msg.anon === true || msg.sender === "anon") && !isDiscordMsg);
     const div = document.createElement("div");
@@ -804,11 +1748,14 @@ async function renderMessageInstant(id, msg) {
         editedSpan.style.marginLeft = "40px";
     }
     const rawText = isDiscordMsg ? (msg.t || "") : (msg.t || msg.text || "");
+    textDiv.dataset.rawText = rawText;
     async function buildRichText(raw, textDivEl) {
         let safe = buildSafeText(raw);
         safe = await processChannelMentions(safe);
+        safe = await processDiscordMentions(safe);
         textDivEl.innerHTML = safe;
-        textDivEl.querySelectorAll("discord-embed-b64").forEach(el => {            try {
+        textDivEl.querySelectorAll("discord-embed-b64").forEach(el => {            
+            try {
                 const b64 = el.getAttribute("data") || "";
                 const decoded = atob(b64);
                 const wrapper = document.createElement("div");
@@ -831,6 +1778,13 @@ async function renderMessageInstant(id, msg) {
             span.addEventListener("click", () => {
                 const ch = span.dataset.channel;
                 if (typeof switchChannel === "function") switchChannel(ch);
+            });
+        });
+        textDivEl.querySelectorAll(".discord-channel-mention[data-website-channel]").forEach(span => {
+            span.style.cursor = "pointer";
+            span.addEventListener("click", () => {
+                const ch = span.dataset.websiteChannel;
+                if (ch && typeof switchChannel === "function") switchChannel(ch);
             });
         });
         textDivEl.querySelectorAll(".chat-img").forEach(img => {
@@ -920,7 +1874,6 @@ async function renderMessageInstant(id, msg) {
                 const close = () => { menu.remove(); document.removeEventListener("click", close); };
                 setTimeout(() => { document.addEventListener("click", close); }, 0);
             };
-            link.addEventListener("contextmenu", (e) => { e.preventDefault(); showLinkMenu(e.clientX, e.clientY); });
             let pressTimer = null;
             link.addEventListener("touchstart", (e) => { pressTimer = setTimeout(() => { const t = e.touches[0]; showLinkMenu(t.clientX, t.clientY); }, 500); });
             link.addEventListener("touchend", () => clearTimeout(pressTimer));
@@ -939,7 +1892,7 @@ async function renderMessageInstant(id, msg) {
     leftWrapper.appendChild(profilePic);
     leftWrapper.appendChild(nameSpan);
     if (isAnonMsg) {
-        profilePic.src = "/pfps/1.jpeg";
+        profilePic.src = `${pfpDomain}/1.jpeg`;
         profilePic.onerror = () => { profilePic.src = ""; profilePic.style.display = "none"; };
         nameSpan.textContent = msg.u || "Anonymous";
         nameSpan.style.color = "#aaa";
@@ -960,7 +1913,7 @@ async function renderMessageInstant(id, msg) {
         nameSpan.textContent = msg.u || "This Message Is From The Discord";
         nameSpan.style.color = "#5865F2";
         const discordBadge = document.createElement("span");
-        discordBadge.innerHTML = `<i class="bi bi-discord" style="color:#5865F2" title="This Message Is From The Discord"></i>`;
+        discordBadge.innerHTML = `<i class="ic ic-discord" style="color:#5865F2" title="This Message Is From The Discord"></i>`;
         discordBadge.style.marginLeft = "4px";
         leftWrapper.appendChild(discordBadge);
         if (msg.r) {
@@ -974,9 +1927,7 @@ async function renderMessageInstant(id, msg) {
                         if (rData.file || rData.fileUrl || rData.attachment) {
                             rText = '<span style="color:#4fa3ff;">Click To View Attachment</span>';
                         } else {
-                            rText = (rData.t || rData.text || "").substring(0, 80);
-                            rText = buildSafeText(rText);
-                            rText = rText.replace(/<br\s*\/?>/gi, " ").replace(/\s+/g, " ").trim();
+                            rText = buildReplyPreviewText((rData.t || rData.text || "").substring(0, 120));
                         }
                         const replyPreview = document.createElement("div");
                         replyPreview.style.display = "flex";
@@ -1016,11 +1967,11 @@ async function renderMessageInstant(id, msg) {
         div.appendChild(reactionsRow);
         const discordReactBtn = document.createElement("button");
         discordReactBtn.className = "react-btn";
-        discordReactBtn.innerHTML = `<i class="bi bi-emoji-smile"></i>`;
+        discordReactBtn.innerHTML = `<i class="ic ic-emoji-smile"></i>`;
         discordReactBtn.title = "Add Reaction";
         discordReactBtn.onclick = (e) => { e.stopPropagation(); showEmojiPicker(e, id); };
         const discordReplyBtn = document.createElement("button");
-        discordReplyBtn.innerHTML = `<i class="bi bi-arrow-90deg-left"></i>`;
+        discordReplyBtn.innerHTML = `<i class="ic ic-arrow-90deg-left"></i>`;
         discordReplyBtn.title = "Reply to Discord message";
         discordReplyBtn.onclick = () => toggleReply(id, msg.u || "Discord User", rawText);
         msgBtns.appendChild(discordReplyBtn);
@@ -1043,21 +1994,110 @@ async function renderMessageInstant(id, msg) {
                 try {
                     const rData = await dbGet(`${currentPath}/${replyId}`);
                     if (rData) {
-                        const rName = rData.u || (rData.s ? await getDisplayName(rData.s) : "Unknown");
-                        const rText = rData.t || rData.text || "(message)";
-                        const replyBar = document.createElement("div");
-                        replyBar.className = "reply-bar";
-                        replyBar.style.cssText = "border-left:3px solid #aaa;padding-left:6px;color:#aaa;font-size:0.82em;margin-bottom:3px;cursor:pointer;";
-                        replyBar.textContent = `↩ ${rName}: ${rText.slice(0, 80)}`;
-                        replyBar.onclick = () => scrollToMessage(String(replyId));
-                        textDiv.prepend(replyBar);
+                        const rName = rData.u || (rData.s ? await getDisplayName(rData.s) : (rData.sender ? await getDisplayName(rData.sender) : "Unknown"));
+                        let rText;
+                        if (rData.file || rData.fileUrl || rData.attachment) {
+                            rText = '<span style="color:#4fa3ff;">Click To View Attachment</span>';
+                        } else {
+                            rText = buildReplyPreviewText((rData.t || rData.text || "").substring(0, 120));
+                        }
+                        const replyPreview = document.createElement("div");
+                        replyPreview.style.display = "flex";
+                        replyPreview.style.cursor = "pointer";
+                        replyPreview.style.gap = "5px";
+                        replyPreview.onclick = () => scrollToMessage(String(replyId));
+                        const arrow = document.createElement("span");
+                        arrow.style.width = "30px";
+                        arrow.style.marginLeft = "15px";
+                        arrow.style.height = "8px";
+                        arrow.style.marginTop = "11px";
+                        arrow.style.borderTop = "1px solid #aaa";
+                        arrow.style.borderLeft = "1px solid #aaa";
+                        arrow.style.borderTopLeftRadius = "10px";
+                        const replySpan = document.createElement("span");
+                        replySpan.style.fontSize = "0.8em";
+                        reply.style.marginRight = "44px";
+                        replySpan.style.color = "#aaa";
+                        reply.style.marginTop = "-5px";
+                        replySpan.style.whiteSpace = "nowrap";
+                        replySpan.style.overflow = "hidden";
+                        replySpan.style.textOverflow = "ellipsis";
+                        replySpan.style.maxWidth = "100%";
+                        replySpan.innerHTML = `Replying To: @${rName}: ${rText}`;
+                        replyPreview.appendChild(arrow);
+                        replyPreview.appendChild(replySpan);
+                        div.prepend(replyPreview);
                     }
                 } catch {}
             })();
         }
         if (isOwner || isCoOwner || isTester || isHAdmin) {
+            const anonEditBtn = document.createElement("button");
+            anonEditBtn.innerHTML = "<i class='ic ic-pencil-square'></i>";
+            anonEditBtn.title = "Edit Guest Message";
+            anonEditBtn.onclick = () => {
+                if (div.querySelector("textarea")) return;
+                const textarea = document.createElement("textarea");
+                textarea.value = textDiv.dataset.rawText ?? rawText;
+                textarea.style.cssText = "width:100%;box-sizing:border-box;resize:vertical;background:#121212;color:#fff;border:1px solid #555;border-radius:4px;padding:4px;margin-top:4px;";
+                const textDivHeight = textDiv.offsetHeight;
+                if (textDivHeight > 0) textarea.style.height = textDivHeight + "px";
+                textDiv.style.display = "none";
+                const saveBtn = document.createElement("button");
+                saveBtn.textContent = "Save";
+                saveBtn.style.marginRight = "6px";
+                const cancelBtn = document.createElement("button");
+                cancelBtn.textContent = "Cancel";
+                saveBtn.onclick = async () => {
+                    const newText = textarea.value.trim();
+                    if (!newText) return;
+                    try {
+                        await dbSet(`${currentPath}/${id}/t`, newText);
+                        await dbSet(`${currentPath}/${id}/e`, "edited");
+                    } catch (err) {
+                        showError(err?.message || "Failed To Edit Message.");
+                        return;
+                    }
+                    textarea.remove();
+                    saveBtn.remove();
+                    cancelBtn.remove();
+                    textDiv.style.display = "block";
+                    textDiv.innerHTML = buildSafeText(newText);
+                    textDiv.dataset.rawText = newText;
+                    if (!div.querySelector(".edited-label")) {
+                        const newEditedSpan = document.createElement("span");
+                        newEditedSpan.className = "edited-label";
+                        newEditedSpan.style.fontSize = "0.72em";
+                        newEditedSpan.style.color = "#888";
+                        newEditedSpan.style.marginLeft = "40px";
+                        newEditedSpan.textContent = "(Edited)";
+                        textDiv.after(newEditedSpan);
+                    }
+                };
+                cancelBtn.onclick = () => {
+                    textarea.remove();
+                    saveBtn.remove();
+                    cancelBtn.remove();
+                    textDiv.style.display = "block";
+                };
+                textarea.onkeydown = (e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        saveBtn.click();
+                    } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelBtn.click();
+                    }
+                };
+                textDiv.after(textarea);
+                textarea.after(saveBtn);
+                saveBtn.after(cancelBtn);
+                textarea.focus();
+                textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+            };
+            msgBtns.appendChild(anonEditBtn);
             const anonDelBtn = document.createElement("button");
-            anonDelBtn.innerHTML = "<i class='bi bi-trash'></i>";
+            anonDelBtn.innerHTML = "<i class='ic ic-trash'></i>";
             anonDelBtn.title = "Delete Guest Message";
             anonDelBtn.onclick = async (e) => {
                 if (e.shiftKey) {
@@ -1075,6 +2115,7 @@ async function renderMessageInstant(id, msg) {
         }
         div.appendChild(topRow);
         div.appendChild(textDiv);
+        if (editedSpan) div.appendChild(editedSpan);
         const reactionsRow = document.createElement("div");
         reactionsRow.className = "reactions-row";
         reactionsRow.dataset.msgid = id;
@@ -1083,6 +2124,7 @@ async function renderMessageInstant(id, msg) {
         return div;
     }
     const senderId = msg.sender || msg.s;
+    const banTargetId = isAnonMsg ? (msg.anonId ? `anon:${msg.anonId}` : null) : senderId;
     if (!senderId) return null;
     nameSpan.textContent = "Loading...";
     nameSpan.style.color = "#aaa";
@@ -1091,16 +2133,16 @@ async function renderMessageInstant(id, msg) {
     if (replyId) {
         (async () => {
             try {
-                const rData = await dbGet(`${currentPath}/${replyId}`);
+                const rData = currentGroupId
+                    ? currentGroupMessagesCache[replyId]
+                    : await dbGet(`${currentPath}/${replyId}`);
                 if (rData) {
                     const rName = rData.u || (rData.s ? await getDisplayName(rData.s) : (rData.sender ? await getDisplayName(rData.sender) : "Unknown"));
                     let rText;
                     if (rData.file || rData.fileUrl || rData.attachment) {
                         rText = '<span style="color:#4fa3ff;">Click To View Attachment</span>';
                     } else {
-                        rText = (rData.t || rData.text || "").substring(0, 80);
-                        rText = buildSafeText(rText);
-                        rText = rText.replace(/<br\s*\/?>/gi, " ").replace(/\s+/g, " ").trim();
+                        rText = buildReplyPreviewText((rData.t || rData.text || "").substring(0, 120));
                     }
                     const replyPreview = document.createElement("div");
                     replyPreview.style.display = "flex";
@@ -1134,7 +2176,7 @@ async function renderMessageInstant(id, msg) {
     }
     const reactBtn = document.createElement("button");
     reactBtn.className = "react-btn";
-    reactBtn.innerHTML = `<i class="bi bi-emoji-smile"></i>`;
+    reactBtn.innerHTML = `<i class="ic ic-emoji-smile"></i>`;
     reactBtn.title = "Add Reaction";
     reactBtn.onclick = (e) => { e.stopPropagation(); showEmojiPicker(e, id); };
     msgBtns.appendChild(reactBtn);
@@ -1159,18 +2201,7 @@ async function renderMessageInstant(id, msg) {
             const meta = await getUserMeta(senderId);
             let displayName = meta.displayName;
             if (!displayName || displayName.trim() === "") displayName = "Spam Account";
-            let profilePics = [];
-            try {
-                const pfpDate = Date.now();
-                const res = await fetch(`${pfpDomain}/index.json?t=${pfpDate}`);
-                const files = await res.json();
-                profilePics = files.map(file => `${pfpDomain}/${file}`);
-            } catch {
-                profilePics = [`${pfpDomain}/1.jpeg`];
-            }
-            const picVal = meta.pic;
-            const picIndex = (picVal >= 0 && picVal < profilePics.length) ? picVal : 0;
-            profilePic.src = profilePics[picIndex] + "?t=" + Date.now();
+            profilePic.src = `${pfpDomain}/${senderId}?t=${Date.now()}`;
             profilePic.style.border = `2px solid ${meta.color}`;
             nameSpan.textContent = displayName;
             nameSpan.style.color = meta.color;
@@ -1182,27 +2213,46 @@ async function renderMessageInstant(id, msg) {
                     e.preventDefault();
                     const freshMeta = await getUserMeta(senderId);
                     const alreadyMuted = freshMeta.muted;
+                    const banStatus = banTargetId ? await adminGetBanStatus(banTargetId) : { banned: false };
                     const menu = document.createElement("div");
                     menu.style.cssText = "position:absolute;background:#222;border:1px solid #555;border-radius:6px;padding:6px 10px;color:#fff;cursor:pointer;z-index:9999;";
                     menu.style.left = e.pageX + "px";
                     menu.style.top = e.pageY + "px";
-                    if (alreadyMuted) {
-                        menu.textContent = "Unmute User";
-                        menu.onclick = async () => { await unmuteUser(senderId); closeMenu(); };
-                    } else {
-                        menu.textContent = "Mute User";
-                        const options = document.createElement("div");
-                        options.style.cssText = "display:flex;flex-direction:column;margin-top:4px;";
-                        const mkOpt = (label, fn) => {
-                            const d = document.createElement("div");
-                            d.textContent = label; d.style.cursor = "pointer";
-                            d.onclick = fn; options.appendChild(d);
+                    if (!isAnonMsg) {
+                        if (alreadyMuted) {
+                            menu.textContent = "Unmute User";
+                            menu.onclick = async () => { await unmuteUser(senderId); closeMenu(); };
+                        } else {
+                            menu.textContent = "Mute User";
+                            const options = document.createElement("div");
+                            options.style.cssText = "display:flex;flex-direction:column;margin-top:4px;";
+                            const mkOpt = (label, fn) => {
+                                const d = document.createElement("div");
+                                d.textContent = label; d.style.cursor = "pointer";
+                                d.onclick = fn; options.appendChild(d);
+                            };
+                            mkOpt("Toggle", async () => { await dbSet(`mutedUsers/${senderId}`, { expires: "Never" }); delete userMetaCache[senderId]; showSuccess("User Muted"); closeMenu(); });
+                            mkOpt("Minutes", async () => { let m = parseInt(await customPrompt("Minutes?", false, "5")); if (!isNaN(m) && m > 0) { await dbSet(`mutedUsers/${senderId}`, { expires: Date.now() + m * 60000 }); delete userMetaCache[senderId]; showSuccess(`Muted ${m}m`); } closeMenu(); });
+                            mkOpt("Hours", async () => { let h = parseInt(await customPrompt("Hours?", false, "1")); if (!isNaN(h) && h > 0) { await dbSet(`mutedUsers/${senderId}`, { expires: Date.now() + h * 3600000 }); delete userMetaCache[senderId]; showSuccess(`Muted ${h}h`); } closeMenu(); });
+                            mkOpt("Days", async () => { let d = parseInt(await customPrompt("Days?", false, "1")); if (!isNaN(d) && d > 0) { await dbSet(`mutedUsers/${senderId}`, { expires: Date.now() + d * 86400000 }); delete userMetaCache[senderId]; showSuccess(`Muted ${d}d`); } closeMenu(); });
+                            menu.appendChild(options);
+                        }
+                    }
+                    if (banTargetId) {
+                        const banRow = document.createElement("div");
+                        banRow.style.cssText = "margin-top:6px;padding-top:6px;border-top:1px solid #444;color:#ff5c5c;";
+                        banRow.textContent = banStatus.banned
+                            ? (isAnonMsg ? "Unban Anonymous User" : "Unban User")
+                            : (isAnonMsg ? "Ban Anonymous User (12h)" : "Ban User");
+                        banRow.onclick = async () => {
+                            if (banStatus.banned) {
+                                await adminUnbanTarget(banTargetId, { anon: isAnonMsg });
+                            } else {
+                                await adminBanTarget(banTargetId, { anon: isAnonMsg });
+                            }
+                            closeMenu();
                         };
-                        mkOpt("Toggle", async () => { await dbSet(`mutedUsers/${senderId}`, { expires: "Never" }); delete userMetaCache[senderId]; showSuccess("User Muted"); closeMenu(); });
-                        mkOpt("Minutes", async () => { let m = parseInt(await customPrompt("Minutes?", false, "5")); if (!isNaN(m) && m > 0) { await dbSet(`mutedUsers/${senderId}`, { expires: Date.now() + m * 60000 }); delete userMetaCache[senderId]; showSuccess(`Muted ${m}m`); } closeMenu(); });
-                        mkOpt("Hours", async () => { let h = parseInt(await customPrompt("Hours?", false, "1")); if (!isNaN(h) && h > 0) { await dbSet(`mutedUsers/${senderId}`, { expires: Date.now() + h * 3600000 }); delete userMetaCache[senderId]; showSuccess(`Muted ${h}h`); } closeMenu(); });
-                        mkOpt("Days", async () => { let d = parseInt(await customPrompt("Days?", false, "1")); if (!isNaN(d) && d > 0) { await dbSet(`mutedUsers/${senderId}`, { expires: Date.now() + d * 86400000 }); delete userMetaCache[senderId]; showSuccess(`Muted ${d}d`); } closeMenu(); });
-                        menu.appendChild(options);
+                        menu.appendChild(banRow);
                     }
                     document.body.appendChild(menu);
                     const closeMenu = () => { menu.remove(); document.removeEventListener("click", closeMenu); };
@@ -1215,7 +2265,7 @@ async function renderMessageInstant(id, msg) {
             mutedBadge.style.color = "red";
             mutedBadge.style.display = "none";
             mutedBadge.title = "This User Is Muted";
-            mutedBadge.innerHTML = '<i class="bi bi-volume-mute-fill"></i>';
+            mutedBadge.innerHTML = '<i class="ic ic-volume-mute-fill"></i>';
             dbListen(`mutedUsers/${senderId}`, async (data) => {
                 if (!data) { mutedBadge.style.display = "none"; return; }
                 if (data.expires === "Never") { mutedBadge.style.display = "inline"; return; }
@@ -1226,28 +2276,35 @@ async function renderMessageInstant(id, msg) {
             const extraBadges = [];
             const mkP = (cls, color, title) => allPrimaryBadges.push({ cls, color, title });
             const mkE = (cls, color, label, title) => extraBadges.push({ cls, color, label, title });
-            if (meta.sus) mkP("bi bi-shield-exclamation","red","Under Investigation");
-            if (meta.owner) mkP("bi bi-shield-plus","lime","Owner");
-            if (meta.tester) mkP("fa-solid fa-cogs","darkGoldenRod","Tester");
-            if (meta.coOwner) mkP("bi bi-shield-fill","lightblue","Co-Owner");
-            if (meta.hAdmin) mkP("fa-solid fa-shield-halved","#00cc99","Head Admin");
-            if (meta.admin) mkP("bi bi-shield","dodgerblue","Admin");
-            if (meta.dev) mkP("bi bi-code-square","green","Developer");
-            if (meta.premium3) mkP("bi bi-hearts","red","Premium T3");
-            if (meta.premium2) mkP("bi bi-heart-fill","orange","Premium T2");
-            if (meta.premium1) mkP("bi bi-heart-half","yellow","Premium T1");
-            if (meta.donor) mkP("bi bi-balloon-heart","#00E5FF","Donated");
-            if (meta.partner) mkE("fa fa-handshake","cornflowerblue","Partner","Partner");
-            if (meta.uploader) mkE("bi bi-film","grey","Uploader","Uploaded A Movie");
-            if (meta.milestone) mkE("bi bi-award","yellow","Award","Award Badge");
-            if (meta.guesser) mkE("bi bi-stopwatch","#ff0000","Guesser","Guesser");
-            if (meta.discord && meta.discord.trim()) mkE("bi bi-discord","#5865F2",`@${meta.discord}`,`Discord: @${meta.discord}`);
-            if (meta.linker) mkE("bi bi-link","#4fa3ff","Linker","Link Sharer");
-            if (meta.secure) mkE("bi ic ic-securely","dodgerblue","Securely","Has Securely");
-            if (meta.guardian) mkE("bi ic ic-goguardian","grey","GoGuardian","Has GoGuardian");
-            if (meta.lanschool) mkE("bi ic ic-lanschool","greenyellow","Lanschool","Has Lanschool");
-            if (meta.linewize) mkE("bi ic ic-linewize","lightskyblue","Linewize","Has Linewize");
-            if (meta.blocksi) mkE("bi ic ic-blocksi","cadetblue","Blocksi","Has Blocksi");
+            if (meta.sus) mkP("ic ic-shield-exclamation","red","Under Investigation");
+            if (meta.owner) mkP("ic ic-shield-plus","lime","Owner");
+            if (meta.tester) mkP("ic ic-cogs","darkGoldenRod","Tester");
+            if (meta.coOwner) mkP("ic ic-shield-fill","lightblue","Co-Owner");
+            if (meta.hAdmin) mkP("ic ic-shield-halved","#00cc99","Head Admin");
+            if (meta.admin) mkP("ic ic-shield","dodgerblue","Admin");
+            if (meta.dev) mkP("ic ic-code-square","green","Developer");
+            if (meta.premium3) mkP("ic ic-hearts","red","Premium T3");
+            if (meta.premium2) mkP("ic ic-heart-fill","orange","Premium T2");
+            if (meta.premium1) mkP("ic ic-heart-half","yellow","Premium T1");
+            if (meta.donor) mkP("ic ic-balloon-heart","#00E5FF","Donated");
+            if (meta.partner) mkE("ic ic-handshake","cornflowerblue","Partner","Partner");
+            if (meta.uploader) mkE("ic ic-film","grey","Uploader","Uploaded A Movie");
+            if (meta.milestone) mkE("ic ic-award","yellow","Award","Award Badge");
+            if (meta.guesser) mkE("ic ic-stopwatch","#ff0000","Guesser","Guesser");
+            if (meta.discord && meta.discord.trim()) mkE("ic ic-discord","#5865F2",`@${meta.discord}`,`Discord: @${meta.discord}`);
+            if (meta.linker) mkE("ic ic-link","#4fa3ff","Linker","Link Sharer");
+            if (meta.secure) mkE("ib ic ic-securely","","Securely","Has Securely");
+            if (meta.guardian) mkE("ib ic ic-goguardian","","GoGuardian","Has GoGuardian");
+            if (meta.lanschool) mkE("ib ic ic-lanschool","","Lanschool","Has Lanschool");
+            if (meta.linewize) mkE("ib ic ic-linewize","","Linewize","Has Linewize");
+            if (meta.blocksi) mkE("ib ic ic-blocksi","","Blocksi","Has Blocksi");
+            if (meta.fortiguard) mkE("ib ic ic-fortiguard","","FortiGuard","Has FortiGuard");
+            if (meta.lightspeed) mkE("ib ic ic-lightspeed","","LightSpeed","Has LightSpeed");
+            if (meta.cisco) mkE("ib ic ic-cisco","","Cisco Umbrella","Has Cisco Umbrella");
+            if (meta.contentkeeper) mkE("ib ic ic-contentkeeper","","ContentKeeper","Has ContentKeeper");
+            if (meta.deledao) mkE("ib ic ic-deledao","","Deledao","Has Deledao");
+            if (meta.iboss) mkE("ib ic ic-iboss","","IBoss","Has IBoss");
+            if (meta.barracuda) mkE("ib ic ic-barracuda","","Barracuda","Has Barracuda");
             const totalRoles = allPrimaryBadges.length + extraBadges.length;
             let inlinePrimaries, overflowPrimaries, inlineExtras, popoverExtras;
             if (totalRoles <= 3) {
@@ -1259,13 +2316,18 @@ async function renderMessageInstant(id, msg) {
                 inlineExtras = []; popoverExtras = extraBadges;
             }
             const onlineBadge = document.createElement("i");
-            const setOnlineStatus = (isOnline) => {
-                onlineBadge.className = isOnline ? "bi ic ic-online" : "bi ic ic-offline";
-                onlineBadge.style.color = isOnline ? "#69a84f" : "#999999";
-                onlineBadge.title = isOnline ? "Online" : "Offline";
+            let livePresenceStatus = meta.status || "offline";
+            const refreshPresenceBadge = () => {
+                const eff = effectivePresence(livePresenceStatus);
+                const badgeMeta = PRESENCE_META[eff] || PRESENCE_META.offline;
+                onlineBadge.className = badgeMeta.icon;
+                onlineBadge.title = badgeMeta.title;
             };
-            setOnlineStatus(meta.online);
-            dbListen(`users/${senderId}/profile/online`, (val) => setOnlineStatus(!!val));
+            refreshPresenceBadge();
+            dbListen(`users/${senderId}/profile/status`, (val) => {
+                livePresenceStatus = (val && STATUS_META[val]) ? val : "offline";
+                refreshPresenceBadge();
+            });
             inlinePrimaries.forEach(({ cls, color, title }) => {
                 const span = document.createElement("span");
                 span.innerHTML = `<i class="${cls}" style="color:${color}" title="${title}"></i>`;
@@ -1307,23 +2369,27 @@ async function renderMessageInstant(id, msg) {
             leftWrapper.appendChild(badgeContainer);
             const isSelf = senderId === currentUser?.uid;
             const replyBtn = document.createElement("button");
-            replyBtn.innerHTML = `<i class="bi bi-arrow-90deg-left"></i>`;
+            replyBtn.innerHTML = `<i class="ic ic-arrow-90deg-left"></i>`;
             replyBtn.title = "Reply";
             replyBtn.onclick = () => toggleReply(id, displayName, rawText);
             if (!isGuest) {
                 msgBtns.insertBefore(replyBtn, reactBtn);
             }
-            if (!isGuest && (isSelf || isOwner || isAdmin || isCoOwner || isHAdmin || isTester)) {
-                let canDelete = isSelf || isOwner || isTester || (isCoOwner && !meta.owner && !meta.tester && !meta.coOwner) || (isHAdmin && !meta.owner && !meta.coOwner && !meta.tester && !meta.hAdmin);
-                let canEdit   = isSelf || isOwner || isTester || (isCoOwner && !meta.owner && !meta.tester && !meta.coOwner && !meta.hAdmin);
+            if (!isGuest && (isSelf || isOwner || isAdmin || isCoOwner || isHAdmin || isTester || (currentGroupId && currentGroupOwnerUid === currentUser?.uid))) {
+                let canDelete = currentGroupId
+                    ? (isSelf || currentGroupOwnerUid === currentUser?.uid)
+                    : (isSelf || isOwner || isTester || (isCoOwner && !meta.owner && !meta.tester && !meta.coOwner) || (isHAdmin && !meta.owner && !meta.coOwner && !meta.tester && !meta.hAdmin));
+                let canEdit = currentGroupId
+                    ? isSelf
+                    : (isSelf || isOwner || isTester || (isCoOwner && !meta.owner && !meta.tester && !meta.coOwner && !meta.hAdmin));
                 if (canEdit) {
                     const editBtn = document.createElement("button");
-                    editBtn.innerHTML = "<i class='bi bi-pencil-square'></i>";
+                    editBtn.innerHTML = "<i class='ic ic-pencil-square'></i>";
                     editBtn.title = "Edit Message";
                     editBtn.onclick = () => {
                         if (div.querySelector("textarea")) return;
                         const textarea = document.createElement("textarea");
-                        textarea.value = rawText;
+                        textarea.value = textDiv.dataset.rawText ?? rawText;
                         textarea.style.cssText = "width:100%;box-sizing:border-box;resize:vertical;background:#121212;color:#fff;border:1px solid #555;border-radius:4px;padding:4px;margin-top:4px;";
                         const textDivHeight = textDiv.offsetHeight;
                         if (textDivHeight > 0) textarea.style.height = textDivHeight + "px";
@@ -1336,13 +2402,18 @@ async function renderMessageInstant(id, msg) {
                         saveBtn.onclick = async () => {
                             const newText = textarea.value.trim();
                             if (!newText) return;
-                            await dbSet(`${currentPath}/${id}/t`, newText);
-                            await dbSet(`${currentPath}/${id}/e`, "edited");
+                            if (currentGroupId) {
+                                await fetchAPI(`groups/${currentGroupId}/edit-message`, { msgId: id, text: newText });
+                            } else {
+                                await dbSet(`${currentPath}/${id}/t`, newText);
+                                await dbSet(`${currentPath}/${id}/e`, "edited");
+                            }
                             textarea.remove(); 
                             saveBtn.remove(); 
                             cancelBtn.remove();
                             textDiv.style.display = "block";
                             textDiv.innerHTML = buildSafeText(newText);
+                            textDiv.dataset.rawText = newText;
                         };
                         cancelBtn.onclick = () => { 
                             textarea.remove(); 
@@ -1350,26 +2421,40 @@ async function renderMessageInstant(id, msg) {
                             cancelBtn.remove(); 
                             textDiv.style.display = "block";
                         };
+                        textarea.onkeydown = (e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                saveBtn.click();
+                            } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                cancelBtn.click();
+                            }
+                        };
                         textDiv.after(textarea);
                         textarea.after(saveBtn);
                         saveBtn.after(cancelBtn);
+                        textarea.focus();
+                        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
                     };
                     msgBtns.insertBefore(editBtn, reactBtn);
                 }
                 if (canDelete) {
                     const delBtn = document.createElement("button");
-                    delBtn.innerHTML = "<i class='bi bi-trash'></i>";
+                    delBtn.innerHTML = "<i class='ic ic-trash'></i>";
                     delBtn.title = "Delete Message";
                     delBtn.onclick = async (e) => {
-                        if (e.shiftKey) {
-                            await dbDelete(`${currentPath}/${id}`);
+                        const doDelete = async () => {
+                            if (currentGroupId) {
+                                await fetchAPI(`groups/${currentGroupId}/delete-message`, { msgId: id });
+                            } else {
+                                await dbDelete(`${currentPath}/${id}`);
+                            }
                             div.remove();
-                            return;
-                        }
+                        };
+                        if (e.shiftKey) { await doDelete(); return; }
                         showConfirm("Delete This Message?", async (ok) => {
                             if (!ok) return;
-                            await dbDelete(`${currentPath}/${id}`);
-                            div.remove();
+                            await doDelete();
                         });
                     };
                     msgBtns.appendChild(delBtn);
@@ -1431,7 +2516,7 @@ function buildSafeText(raw) {
         safe = safe.replace(/\x00DISCORD_EMBED_(\d+)\x00/g, (_, i) => embedPlaceholders[Number(i)]);
     }
     safe = safe.replace(
-        /&lt;i\s+class="([^"]*(?:fa|bi)[^"]+)"(?:\s+style="([^"]*)")?(?:\s+title="([^"]*)")?\s*&gt;&lt;\/i&gt;/g,
+        /&lt;i\s+class="([^"]*(?:fa|bi|ic)[^"]+)"(?:\s+style="([^"]*)")?(?:\s+title="([^"]*)")?\s*&gt;&lt;\/i&gt;/g,
         (_, cls, style, title) => {
             let attrs = `class="${cls}"`;
             if (style) attrs += ` style="${style}"`;
@@ -1499,7 +2584,7 @@ function buildSafeText(raw) {
             const fsizeMatch = attrs.match(/\bdata-fsize="([^"]*)"/i);
             const fsize = fsizeMatch ? fsizeMatch[1] : "";
             const fsizeHtml = fsize ? `<span class="discord-vid-size">${fsize}</span>` : "";
-            return `<div class="discord-vid-wrapper"><div class="discord-vid-topbar"><span class="discord-vid-fname">${fname}</span>${fsizeHtml}<a class="discord-vid-dl" href="${safeSrc}" download="${fname}" title="Download"><i class="bi bi-download"></i></a></div><video src="${safeSrc}" class="chat-vid discord-vid" onerror="this.parentElement.style.display='none'"></video><div class="discord-vid-controls"><button class="discord-vid-play"><i class="bi bi-play-fill"></i></button><input type="range" class="discord-vid-seek" value="0" min="0" max="100" step="0.1"><div class="discord-vid-time"><span class="discord-vid-cur">0:00</span> / <span class="discord-vid-dur">0:00</span></div><button class="discord-vid-mute" title="Mute"><i class="bi bi-volume-up-fill"></i></button></div></div>`;
+            return `<div class="discord-vid-wrapper"><div class="discord-vid-topbar"><span class="discord-vid-fname">${fname}</span>${fsizeHtml}<a class="discord-vid-dl" href="${safeSrc}" download="${fname}" title="Download"><i class="ic ic-download"></i></a></div><div class="cvp-player"><video src="${safeSrc}" class="discord-vid" playsinline onerror="this.closest('.discord-vid-wrapper').style.display='none'"></video><div class="cvp-ui"><button class="cvp-center-btn" aria-label="Play/Pause"><i class="ic ic-play-fill"></i></button><div class="cvp-controls"><div class="cvp-progress-track"><div class="cvp-progress-fill"><div class="cvp-progress-dot"></div></div></div><div class="cvp-btn-row"><button class="cvp-btn cvp-play-btn" aria-label="Play/Pause"><i class="ic ic-play-fill"></i></button><div class="cvp-time"><span class="discord-vid-cur">0:00</span> / <span class="discord-vid-dur">0:00</span></div><div class="cvp-spacer"></div><button class="cvp-btn cvp-mute-btn" title="Mute"><i class="ic ic-volume-up-fill"></i></button><button class="cvp-btn cvp-fs-btn" title="Fullscreen"><i class="ic ic-fullscreen"></i></button></div></div></div></div></div>`;
         }
     );
     safe = safe.replace(/&lt;\/video&gt;/gi, "");
@@ -1519,8 +2604,8 @@ function buildSafeText(raw) {
             const fsizeMatch = attrs.match(/\bdata-fsize="([^"]*)"/i);
             const fsize = fsizeMatch ? fsizeMatch[1] : "";
             const fsizeHtml = fsize ? `<span class="discordaudiosize">${fsize}</span>` : "";
-            const tophtml = `<span class="discordaudiotop"><i class="bi bi-file-earmark-music"></i><span style="display:flex;flex-direction:column;overflow:hidden;">${fname} ${fsizeHtml}</span></span>`
-            return `<div class="discord-audio" data-fname="${fname}" data-src="${safeSrc}" data-dl="${fname}">${tophtml}<audio controls src="${safeSrc}" alt="${alt}" onerror="this.style.display='none'"></audio><div class="discordaudiocontrols"><button class="discordaudioplay"><i class='bi bi-play-fill'></i></button><input type="range" class="discordaudioseek" value="0" min="0" max="100"><div class="discordaudiotime"><span class="current">--:--</span> / <span class="duration">--:--</span></div><a class="discordaudiodl" href="${safeSrc}" download="${fname}" title="Download"><i class="bi bi-download"></i></a></div></div>`;
+            const tophtml = `<span class="discordaudiotop"><i class="ic ic-file-earmark-music"></i><span style="display:flex;flex-direction:column;overflow:hidden;">${fname} ${fsizeHtml}</span></span>`
+            return `<div class="discord-audio" data-fname="${fname}" data-src="${safeSrc}" data-dl="${fname}">${tophtml}<audio controls src="${safeSrc}" alt="${alt}" onerror="this.style.display='none'"></audio><div class="discordaudiocontrols"><button class="discordaudioplay"><i class='ic ic-play-fill'></i></button><input type="range" class="discordaudioseek" value="0" min="0" max="100"><div class="discordaudiotime"><span class="current">--:--</span> / <span class="duration">--:--</span></div><a class="discordaudiodl" href="${safeSrc}" download="${fname}" title="Download"><i class="ic ic-download"></i></a></div></div>`;
         }
     );
     safe = safe.replace(/&lt;\/audio&gt;/gi, "</audio>");
@@ -1535,18 +2620,30 @@ function buildSafeText(raw) {
             const fsizeMatch = attrs.match(/\bdata-fsize="([^"]*)"/i);
             const fsize = fsizeMatch ? fsizeMatch[1] : "";
             const ext = fname.split(".").pop().toLowerCase();
-            let iconClass = "bi bi-file-earmark";
-            if (["pdf"].includes(ext)) iconClass = "bi bi-file-earmark-pdf";
-            else if (["zip","rar","7z","tar","gz"].includes(ext)) iconClass = "bi bi-file-earmark-zip";
-            else if (["doc","docx","txt","md"].includes(ext)) iconClass = "bi bi-file-earmark-text";
-            else if (["xls","xlsx","csv"].includes(ext)) iconClass = "bi bi-file-earmark-spreadsheet";
-            else if (["ppt","pptx"].includes(ext)) iconClass = "bi bi-file-earmark-slides";
-            else if (["js","ts","py","html","css","json","cpp","c","java"].includes(ext)) iconClass = "bi bi-file-earmark-code";
+            let iconClass = "ic ic-file-earmark";
+            if (["pdf"].includes(ext)) iconClass = "ic ic-file-earmark-pdf";
+            else if (["zip","rar","7z","tar","gz"].includes(ext)) iconClass = "ic ic-file-earmark-zip";
+            else if (["doc","docx","txt","md"].includes(ext)) iconClass = "ic ic-file-earmark-text";
+            else if (["xls","xlsx","csv"].includes(ext)) iconClass = "ic ic-file-earmark-spreadsheet";
+            else if (["ppt","pptx"].includes(ext)) iconClass = "ic ic-file-earmark-slides";
+            else if (["js","ts","py","html","css","json","cpp","c","java"].includes(ext)) iconClass = "ic ic-file-earmark-code";
             const fsizeHtml = fsize ? `<span class="discord-file-size">${fsize}</span>` : "";
-            return `<div class="discord-file-block"><i class="${iconClass} discord-file-icon"></i><div class="discord-file-info"><span class="discord-file-name" title="${fname}">${fname}</span>${fsizeHtml}</div><a class="discord-file-dl" href="${safeSrc}" download="${fname}" title="Download"><i class="bi bi-download"></i></a></div>`;
+            return `<div class="discord-file-block"><i class="${iconClass} discord-file-icon"></i><div class="discord-file-info"><span class="discord-file-name" title="${fname}">${fname}</span>${fsizeHtml}</div><a class="discord-file-dl" href="${safeSrc}" download="${fname}" title="Download"><i class="ic ic-download"></i></a></div>`;
         }
     );
     safe = safe.replace(/&lt;\/file&gt;/gi, "");
+    safe = safe.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+        const langLabel = lang ? `<span class="codeblock-lang">${lang}</span>` : "";
+        const escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return `<div class="codeblock">${langLabel}<pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${escaped}</pre></div>`;
+    });
+    safe = safe.replace(/`([^`\n]+)`/g, (_, code) => {
+        const escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return `<code class="inline-code">${escaped}</code>`;
+    });
+    safe = safe.replace(/\|\|(.+?)\|\|/g, (_, content) => {
+        return `<span class="spoiler" onclick="this.classList.toggle('reveal')" title="Click to reveal">${content}</span>`;
+    });
     safe = safe.replace(/\n/g, "<br>");
     const mentionRegex = /@([^\s<]+)/g;
     safe = safe.replace(mentionRegex, (match, name) => {
@@ -1554,6 +2651,12 @@ function buildSafeText(raw) {
         if (lower === "support" && currentPath && currentPath.startsWith("messages/") && (isDev || isOwner || isTester)) {
             return `<span class="mention-self">@support</span>`;
         }
+        if (lower === "everyone" || lower === "here") {
+            return `<span class="mention discord-role-mention" title="Discord ${lower === "everyone" ? "Everyone" : "Here"} Mention">@${name}</span>`;
+        }
+        const cleanLower = lower.replace(/ 💎/g, "");
+        const isKnownUser = knownUserDisplayNames.has(cleanLower) || knownUserDisplayNames.has(lower);
+        if (!isKnownUser) return match;
         const isSelfMention = currentName && (
             currentName.toLowerCase() === lower ||
             currentName.toLowerCase() === lower.replace(" 💎", "")
@@ -1603,6 +2706,42 @@ function buildSafeText(raw) {
         return `${prefix}<a href="${display}" target="_blank" rel="noopener noreferrer" style="color:#4fa3ff;text-decoration:underline;">${display}</a>${trailing}`;
     });
     return safe;
+}
+function buildReplyPreviewText(raw) {
+    if (!raw) return "";
+    let text = raw.replace(/<discord-embed-b64[^>]*>[\s\S]*?<\/discord-embed-b64>/gi, "");
+    text = text.replace(/<discord-embed-b64[^>]*\/?>/gi, "");
+    text = text.replace(
+        /(^|[\s>])(https?:\/\/[^\s<]+)/gi,
+        (match, prefix, url) => {
+            let display = url;
+            while (/[.,!?;:)\]\\"']$/.test(display)) display = display.slice(0, -1);
+            const isTenor = display.includes("tenor.com");
+            const isGifUrl = /\.gif(\?|$)/i.test(display);
+            const isYouTube = /youtube\.com|youtu\.be/i.test(display);
+            const isTikTok = /tiktok\.com/i.test(display);
+            const isImage = /\.(png|jpg|jpeg|webp)(\?|$)/i.test(display);
+            if (isTenor || isGifUrl) return `${prefix}<gif-placeholder></gif-placeholder>`;
+            if (isYouTube || isTikTok || isImage) return `${prefix}<media-placeholder></media-placeholder>`;
+            return match;
+        }
+    );
+    text = text.replace(/<(?!gif-placeholder|\/gif-placeholder|media-placeholder|\/media-placeholder)[^>]+>/gi, "");
+    text = text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+    text = text.replace(/^(#{1,3} |-# )/gm, "");
+    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, "[code]");
+    text = text.replace(/`([^`\n]+)`/g, "$1");
+    text = text.replace(/\|\|(.+?)\|\|/g, "▋ spoiler");
+    text = text.replace(/@[^\s<]*/g, "");
+    text = text.replace(/(https?:\/\/[^\s<]+)/g, "");
+    text = text.replace(/\*\*\*(.*?)\*\*\*/g, "<strong><em>$1</em></strong>");
+    text = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    text = text.replace(/\*(.*?)\*/g, "<em>$1</em>");
+    text = text.replace(/_(.*?)_/g, "<em>$1</em>");
+    text = text.replace(/<gif-placeholder><\/gif-placeholder>/g, `<i class="ic ic-image-fill"></i> Gif`);
+    text = text.replace(/<media-placeholder><\/media-placeholder>/g, `<i class="ic ic-image-fill"></i> Media`);
+    text = text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+    return text;
 }
 dbListen("mutedUsers", async (allMutes) => {
     if (!allMutes) return;
@@ -1695,11 +2834,24 @@ async function attachMessageListeners(path) {
                 initAudioPlayers(newDiv);
                 if (autoScrollEnabled) scrollToBottom(true);
             } else if (lastSnapshot[key] && JSON.stringify(lastSnapshot[key]) !== JSON.stringify(val)) {
+                if (val.type === "poll" && val.poll) {
+                    const drawFn = pollDrawFns.get(key);
+                    if (drawFn) drawFn(val.poll);
+                    continue;
+                }
                 const textDiv = existing.querySelector(".msg-text");
                 const editedSpan = existing.querySelector(".edited-label");
                 if (textDiv) {
                     let safeText = buildSafeText(val.t || val.text);
+                    safeText = await processDiscordMentions(safeText);
                     textDiv.innerHTML = safeText;
+                    textDiv.querySelectorAll(".discord-channel-mention[data-website-channel]").forEach(span => {
+                        span.style.cursor = "pointer";
+                        span.addEventListener("click", () => {
+                            const ch = span.dataset.websiteChannel;
+                            if (ch && typeof switchChannel === "function") switchChannel(ch);
+                        });
+                    });
                     if (editedSpan) editedSpan.textContent = (val.e || val.edited) ? "(Edited)" : "";
                 }
                 const reactRow = existing.querySelector(".reactions-row");
@@ -1711,6 +2863,8 @@ async function attachMessageListeners(path) {
                 const el = document.getElementById("msg-" + key);
                 if (el) el.remove();
                 renderedKeys.delete(key);
+                pollDrawFns.delete(key);
+                pollRevealed.delete(key);
             }
         }
         lastSnapshot = { ...newData };
@@ -1743,17 +2897,17 @@ function initAudioPlayers(container) {
             current.textContent = format(audio.currentTime);
         });
         audio.addEventListener("ended", () => {
-            playBtn.innerHTML = "<i class='bi bi-play-fill'></i>";
+            playBtn.innerHTML = "<i class='ic ic-play-fill'></i>";
             seek.value = 0;
             current.textContent = "0:00";
         });
         playBtn.addEventListener("click", () => {
             if (audio.paused) {
                 audio.play();
-                playBtn.innerHTML = "<i class='bi bi-pause-fill'></i>";
+                playBtn.innerHTML = "<i class='ic ic-pause-fill'></i>";
             } else {
                 audio.pause();
-                playBtn.innerHTML = "<i class='bi bi-play-fill'></i>";
+                playBtn.innerHTML = "<i class='ic ic-play-fill'></i>";
             }
         });
         if (!isMobile) {
@@ -1770,65 +2924,169 @@ function initAudioPlayers(container) {
     scope.querySelectorAll(".discord-vid-wrapper").forEach((wrapper) => {
         if (wrapper.dataset.vidInit) return;
         wrapper.dataset.vidInit = "1";
+        const player = wrapper.querySelector(".cvp-player");
         const video = wrapper.querySelector(".discord-vid");
-        const playBtn = wrapper.querySelector(".discord-vid-play");
-        const seek = wrapper.querySelector(".discord-vid-seek");
+        const ui = wrapper.querySelector(".cvp-ui");
+        const centerBtn = wrapper.querySelector(".cvp-center-btn");
+        const playBtn = wrapper.querySelector(".cvp-play-btn");
+        const muteBtn = wrapper.querySelector(".cvp-mute-btn");
+        const fsBtn = wrapper.querySelector(".cvp-fs-btn");
+        const track = wrapper.querySelector(".cvp-progress-track");
+        const fill = wrapper.querySelector(".cvp-progress-fill");
         const curEl = wrapper.querySelector(".discord-vid-cur");
         const durEl = wrapper.querySelector(".discord-vid-dur");
-        const muteBtn = wrapper.querySelector(".discord-vid-mute");
-        if (!video || !playBtn || !seek || !curEl || !durEl) return;
+        if (!player || !video || !ui || !track || !fill || !curEl || !durEl) return;
+        let hideTimer = null;
+        let dragging = false;
         function fmt(t) {
-            const m = Math.floor(t / 60);
+            if (isNaN(t) || t < 0) t = 0;
+            const h = Math.floor(t / 3600);
+            const m = Math.floor((t % 3600) / 60);
             const s = Math.floor(t % 60).toString().padStart(2, "0");
+            if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s}`;
             return `${m}:${s}`;
         }
+        function updatePlayIcon() {
+            const icon = video.paused
+                ? "<i class='ic ic-play-fill'></i>"
+                : "<i class='ic ic-pause-fill'></i>";
+            if (centerBtn) centerBtn.innerHTML = icon;
+            if (playBtn) playBtn.innerHTML = icon;
+        }
+        function updateMuteIcon() {
+            if (!muteBtn) return;
+            const muted = video.muted || video.volume === 0;
+            muteBtn.innerHTML = muted
+                ? "<i class='ic ic-volume-mute-fill'></i>"
+                : "<i class='ic ic-volume-up-fill'></i>";
+        }
+        function updateFsIcon() {
+            if (!fsBtn) return;
+            const isFs = document.fullscreenElement === player;
+            fsBtn.innerHTML = isFs
+                ? "<i class='ic ic-fullscreen-exit'></i>"
+                : "<i class='ic ic-fullscreen'></i>";
+        }
+        function updateProgress() {
+            const pct = video.duration ? (video.currentTime / video.duration) * 100 : 0;
+            fill.style.width = pct + "%";
+            curEl.textContent = fmt(video.currentTime);
+        }
+        function showUI(autoHide = true) {
+            ui.classList.add("visible");
+            clearTimeout(hideTimer);
+            if (autoHide) {
+                hideTimer = setTimeout(() => {
+                    if (!video.paused) ui.classList.remove("visible");
+                }, 2500);
+            }
+        }
+        function togglePlay() {
+            if (video.paused) video.play();
+            else video.pause();
+        }
+        function toggleFullscreen() {
+            if (document.fullscreenElement === player) {
+                document.exitFullscreen();
+            } else {
+                player.requestFullscreen().catch(() => {});
+            }
+        }
+        function seekTo(clientX) {
+            const rect = track.getBoundingClientRect();
+            let pct = (clientX - rect.left) / rect.width;
+            pct = Math.min(1, Math.max(0, pct));
+            if (video.duration) video.currentTime = pct * video.duration;
+            fill.style.width = (pct * 100) + "%";
+            curEl.textContent = fmt(pct * (video.duration || 0));
+        }
         video.addEventListener("loadedmetadata", () => {
-            seek.max = video.duration;
+            durEl.textContent = fmt(video.duration);
+        });
+        video.addEventListener("durationchange", () => {
             durEl.textContent = fmt(video.duration);
         });
         video.addEventListener("timeupdate", () => {
-            if (!seek._seeking) seek.value = video.currentTime;
-            curEl.textContent = fmt(video.currentTime);
+            if (!dragging) updateProgress();
         });
         video.addEventListener("ended", () => {
-            playBtn.innerHTML = "<i class='bi bi-play-fill'></i>";
-            seek.value = 0;
+            updatePlayIcon();
+            fill.style.width = "0%";
             curEl.textContent = "0:00";
-        });
-        video.addEventListener("pause", () => {
-            playBtn.innerHTML = "<i class='bi bi-play-fill'></i>";
+            showUI(false);
         });
         video.addEventListener("play", () => {
-            playBtn.innerHTML = "<i class='bi bi-pause-fill'></i>";
+            updatePlayIcon();
+            showUI();
         });
-        playBtn.addEventListener("click", () => {
-            if (video.paused) video.play();
-            else video.pause();
+        video.addEventListener("pause", () => {
+            updatePlayIcon();
+            showUI(false);
+        });
+        centerBtn?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            togglePlay();
+            showUI();
+        });
+        playBtn?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            togglePlay();
+            showUI();
         });
         if (muteBtn) {
-            muteBtn.addEventListener("click", () => {
+            muteBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
                 video.muted = !video.muted;
-                muteBtn.innerHTML = video.muted
-                    ? "<i class='bi bi-volume-mute-fill'></i>"
-                    : "<i class='bi bi-volume-up-fill'></i>";
+                updateMuteIcon();
+                showUI();
             });
         }
+        if (fsBtn) {
+            fsBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                toggleFullscreen();
+                showUI();
+            });
+        }
+        player.addEventListener("fullscreenchange", updateFsIcon);
+        track.addEventListener("mousedown", (e) => {
+            dragging = true;
+            seekTo(e.clientX);
+        });
+        track.addEventListener("touchstart", (e) => {
+            dragging = true;
+            seekTo(e.touches[0].clientX);
+        }, { passive: true });
+        document.addEventListener("mousemove", (e) => {
+            if (dragging) seekTo(e.clientX);
+        });
+        document.addEventListener("touchmove", (e) => {
+            if (dragging) seekTo(e.touches[0].clientX);
+        }, { passive: true });
+        document.addEventListener("mouseup", () => { dragging = false; });
+        document.addEventListener("touchend", () => { dragging = false; });
         if (!isMobile) {
-            seek.addEventListener("mousedown", () => { seek._seeking = true; });
-            seek.addEventListener("mouseup", () => {
-                seek._seeking = false;
-                video.currentTime = seek.value;
+            player.addEventListener("mouseenter", () => showUI());
+            player.addEventListener("mousemove", () => showUI());
+            player.addEventListener("mouseleave", () => {
+                if (!video.paused) ui.classList.remove("visible");
             });
-            seek.addEventListener("input", () => {
-                curEl.textContent = fmt(Number(seek.value));
+            video.addEventListener("click", () => {
+                togglePlay();
+                showUI();
             });
-            wrapper.addEventListener("dblclick", (e) => {
-                if (e.target === video) {
-                    if (video.paused) video.play();
-                    else video.pause();
+        } else {
+            video.addEventListener("click", () => {
+                if (ui.classList.contains("visible")) {
+                    togglePlay();
+                    showUI();
+                } else {
+                    showUI();
                 }
             });
         }
+        updateMuteIcon();
+        updateFsIcon();
     });
 }
 function playNotificationSound() {
@@ -1876,13 +3134,15 @@ async function sendPrivateMessage(otherUid, text) {
     await dbPush(path, msg);
     await dbUpdate(`metadata/${currentUser.uid}/privateChats/${otherUid}`, {
         lastRead: Date.now(),
-        unreadCount: 0
+        unreadCount: 0,
+        lastMessageTime: msg.timestamp
     });
     const recipientMeta = await dbGet(`metadata/${otherUid}/privateChats/${currentUser.uid}`) || {};
     await dbSet(`metadata/${otherUid}/privateChats/${currentUser.uid}`, {
         ...recipientMeta,
         lastRead: recipientMeta.lastRead || 0,
-        unreadCount: (recipientMeta.unreadCount || 0) + 1
+        unreadCount: (recipientMeta.unreadCount || 0) + 1,
+        lastMessageTime: msg.timestamp
     });
 }
 async function openPrivateChat(uid, name) {
@@ -1891,15 +3151,38 @@ async function openPrivateChat(uid, name) {
         showError("You Cannot Open A Private Chat With Yourself!");
         return;
     }
+    window.history.replaceState(null, null, `?dm=${uid}`);
+    stopGroupPolling();
+    currentGroupId = null;
+    currentGroupOwnerUid = null;
+    currentGroupName = null;
+    if (groupInfoBtn) groupInfoBtn.style.display = "none";
+    if (groupInfoPanel) groupInfoPanel.style.display = "none";
+    if (privateMenu) privateMenu.style.display = "none";
+    if (pinnedMessagesWrap) pinnedMessagesWrap.style.display = "none";
+    togglePinnedMessagesPanel(false);
+    if (channelTopBarName) channelTopBarName.textContent = name || "";
+    if (chatLockedDown) {
+        chatLog.style.display = "none";
+        return;
+    } else if (isBanned)  {
+        chatLog.style.display = "none";
+    } else {
+        chatLog.style.display = "";
+    }
+    chatMsgFunctions.style.display = "";
+    sendBtn.style.display = "";
     currentPrivateUid = uid;
     currentPrivateName = name || null;
+    watchTopBarStatus(uid);
     chatLog.innerHTML = "";
     let attachBtn = document.getElementById("chatAttachBtn");
-    if (attachBtn) attachBtn.style.display = "none";
+    if (attachBtn) attachBtn.style.display = "";
     if (sidebar.classList.contains("open")) sidebar.classList.toggle("open");
     const [a, b] = [currentUser.uid, uid].sort();
     currentPath = `private/${a}/${b}`;
     attachMessageListeners(currentPath);
+    loadMentionableUsers();
     await dbUpdate(`metadata/${currentUser.uid}/privateChats/${uid}`, {
         lastRead: Date.now(),
         unreadCount: 0
@@ -1917,13 +3200,17 @@ async function updatePrivateListFromSnapshot(chatsSnapshot) {
             li.dataset.uid = otherUid;
             const left = document.createElement("div");
             left.className = "left";
+            const pfpImg = document.createElement("img");
+            pfpImg.className = "dm-pfp";
+            pfpImg.style.cssText = "width:32px;height:32px;border-radius:50%;object-fit:cover;";
+            left.appendChild(pfpImg);
             const usernameSpan = document.createElement("span");
             usernameSpan.className = "username";
             left.appendChild(usernameSpan);
             li.appendChild(left);
             const closeBtn = document.createElement("button");
             closeBtn.className = "closeBtn";
-            closeBtn.innerHTML = `<i class="bi bi-x-circle" title="Close PM"></i>`;
+            closeBtn.innerHTML = `<i class="ic ic-x-circle" title="Close PM"></i>`;
             closeBtn.onclick = async (e) => {
                 e.stopPropagation();
                 showConfirm(`Close Private Chat With ${name}? Messages Will Still Be Saved`, function(result) {
@@ -1939,6 +3226,7 @@ async function updatePrivateListFromSnapshot(chatsSnapshot) {
             li.onclick = () => openPrivateChat(otherUid, name);
             privateList.appendChild(li);
             attachPrivateMessageListener(otherUid);
+            getProfilePicUrl(otherUid).then(url => { pfpImg.src = url; }).catch(() => {});
         }
         const left = li.querySelector(".left");
         const usernameSpan = left.querySelector(".username");
@@ -1952,11 +3240,13 @@ async function updatePrivateListFromSnapshot(chatsSnapshot) {
             dot.textContent = "•";
             left.prepend(dot);
         }
+        li.dataset.lastActivity = String(meta.lastMessageTime || meta.lastRead || 0);
         if (channelList.querySelector(".active")) {
             channelList.querySelector(".active").classList.toggle("active");
         }
         li.classList.toggle("active", currentPrivateUid === otherUid);
     }
+    resortPrivateList();
 }
 function startChannelListeners() {
     dbListen("channels", () => {
@@ -2184,7 +3474,14 @@ async function hasPermission(channelData, type) {
         guardian: meta.guardian,
         lanschool: meta.lanschool,
         linewize: meta.linewize,
-        blocksi: meta.blocksi
+        blocksi: meta.blocksi,
+        fortiguard: meta.fortiguard,
+        lightspeed: meta.lightspeed,
+        cisco: meta.cisco,
+        contentkeeper: meta.contentkeeper,
+        deledao: meta.deledao,
+        iboss: meta.iboss,
+        barracuda: meta.barracuda
     };
     for (const role in perms) {
         if (perms[role] === true && userRoles[role]) {
@@ -2233,7 +3530,7 @@ async function renderChannelsFromDB() {
             const btnWrap = document.createElement("span");
             btnWrap.style.marginLeft = "10px";
             const settingsBtn = document.createElement("button");
-            settingsBtn.innerHTML = `<i class='bi bi-gear' title='Open Settings For #${ch}'></i>`;
+            settingsBtn.innerHTML = `<i class='ic ic-gear' title='Open Settings For #${ch}'></i>`;
             settingsBtn.style.background = "none";
             settingsBtn.style.border = "none";
             settingsBtn.style.padding = "0px";
@@ -2256,14 +3553,39 @@ async function renderChannelsFromDB() {
     renderingChannels = false;
 }
 async function switchChannel(ch) {
+    stopGroupPolling();
+    currentGroupId = null;
+    currentGroupOwnerUid = null;
+    currentGroupName = null;
+    window.history.replaceState(null, null, `?channel=${ch}`);
+    if (groupInfoBtn) groupInfoBtn.style.display = "none";
+    if (groupInfoPanel) groupInfoPanel.style.display = "none";
+    if (privateMenu) privateMenu.style.display = "none";
+    if (chatLockedDown) {
+        chatLog.style.display = "none";
+        return;
+    } else if (isBanned)  {
+        chatLog.style.display = "none";
+    } else {
+        chatLog.style.display = "";
+    }
+    chatMsgFunctions.style.display = "";
+    sendBtn.style.display = "";
+    {
+        const attachBtn = document.getElementById("chatAttachBtn");
+        if (attachBtn) attachBtn.style.display = "";
+    }
     if (isRestrictedChannel(ch) && !(isAdmin || isOwner || isCoOwner || isHAdmin || isTester || isDev || isPre2 || isPre3)) {
         showError("You Don't Have Permission To Access That Channel.");
         ch = "General";
     }
     currentPrivateUid = null;
     currentPrivateName = null;
+    watchTopBarStatus(null);
     chatLog.innerHTML = "";
     currentPath = `messages/${ch}`;
+    if (channelTopBarName) channelTopBarName.textContent = ch;
+    refreshPinnedMessagesBar(ch);
     if (isGuest) {
         const chData = await dbGet(`channels/${ch}`);
         const canRead  = !!(chData?.guestRead  || !chData);
@@ -2292,6 +3614,7 @@ async function switchChannel(ch) {
         return;
     } else {
         attachMessageListeners(currentPath);
+        loadMentionableUsers();
     }
     if (sidebar.classList.contains("open")) sidebar.classList.toggle("open");
     if (typingRef) {
@@ -2319,9 +3642,97 @@ async function switchChannel(ch) {
         } else {
         }
     });
+    if (pinnedRef) {
+        try {
+            if (pinnedRef.close) pinnedRef.close();
+        } catch (e) {}
+        pinnedRef = null;
+    }
+    pinnedRef = await dbListen(`pinned/${ch}`, (pinned) => {
+        if (currentPinnedChannel !== ch) return;
+        renderPinnedMessagesList(pinned || {});
+    });
     clearChannelMention(ch);
     renderChannelsFromDB();
 }
+let currentPinnedChannel = null;
+let pinnedRef = null;
+async function refreshPinnedMessagesBar(channelName) {
+    currentPinnedChannel = channelName;
+    if (!pinnedMessagesWrap) return;
+    togglePinnedMessagesPanel(false);
+    pinnedMessagesWrap.style.display = "";
+    try {
+        const pinned = await dbGet(`pinned/${channelName}`);
+        if (currentPinnedChannel !== channelName) return;
+        renderPinnedMessagesList(pinned || {});
+    } catch (e) {
+        if (currentPinnedChannel === channelName) renderPinnedMessagesList({});
+    }
+}
+function renderPinnedMessagesList(pinnedObj) {
+    const entries = Object.entries(pinnedObj || {}).sort((a, b) => Number(b[0]) - Number(a[0]));
+    if (!pinnedMessagesList) return;
+    pinnedMessagesList.innerHTML = "";
+    if (entries.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "pinnedMsgEmpty";
+        empty.textContent = "No Pinned Messages In This Channel Yet.";
+        pinnedMessagesList.appendChild(empty);
+        return;
+    }
+    for (const [ts, msg] of entries) {
+        const li = document.createElement("li");
+        li.className = "pinnedMsgItem";
+        const img = document.createElement("img");
+        img.src = msg.a ? `${BACKEND}${msg.a}` : "/res/discord.png";
+        img.onerror = () => { img.src = "/res/discord.png"; };
+        const body = document.createElement("div");
+        body.className = "pinnedMsgBody";
+        const header = document.createElement("div");
+        header.className = "pinnedMsgHeader";
+        const author = document.createElement("span");
+        author.className = "pinnedMsgAuthor";
+        author.textContent = msg.u || "Unknown";
+        const time = document.createElement("span");
+        time.className = "pinnedMsgTime";
+        time.textContent = formatTimestamp(Number(ts));
+        header.appendChild(author);
+        header.appendChild(time);
+        const textEl = document.createElement("div");
+        textEl.className = "pinnedMsgText";
+        textEl.textContent = buildReplyPreviewText(msg.t || "") || "[Attachment]";
+        body.appendChild(header);
+        body.appendChild(textEl);
+        li.appendChild(img);
+        li.appendChild(body);
+        li.onclick = () => {
+            togglePinnedMessagesPanel(false);
+            scrollToMessage(String(ts));
+        };
+        pinnedMessagesList.appendChild(li);
+    }
+}
+function togglePinnedMessagesPanel(forceState) {
+    if (!pinnedMessagesPanel) return;
+    const show = forceState !== undefined ? forceState : pinnedMessagesPanel.style.display !== "flex";
+    pinnedMessagesPanel.style.display = show ? "flex" : "none";
+}
+if (pinnedMessagesBtn) {
+    pinnedMessagesBtn.onclick = (e) => {
+        e.stopPropagation();
+        togglePinnedMessagesPanel();
+    };
+}
+if (pinnedMessagesCloseBtn) {
+    pinnedMessagesCloseBtn.onclick = () => togglePinnedMessagesPanel(false);
+}
+document.addEventListener("click", (e) => {
+    if (!pinnedMessagesWrap || !pinnedMessagesPanel) return;
+    if (pinnedMessagesPanel.style.display === "flex" && !pinnedMessagesWrap.contains(e.target)) {
+        togglePinnedMessagesPanel(false);
+    }
+});
 function startMetadataListener() {
     if (metadataListenerRef) return;
     const path = `metadata/${currentUser.uid}/privateChats`;
@@ -2331,6 +3742,34 @@ function startMetadataListener() {
     }, "privateChats");
 }
 sendBtn.onclick = async () => {
+    if (chatLockedDown) {
+        showError("The Chat Is Currently Locked Down. Please Come Back Later.");
+        return;
+    }
+    if (currentGroupId) {
+        if (!currentUser || isGuest) { showError("You Must Be Logged In To Use Group Chats."); return; }
+        const text = chatInput.value.trim();
+        if (!text && !pendingAttachFile) return;
+        if (!isAdmin && !isHAdmin && !isOwner && !isCoOwner && !isTester) {
+            const now = Date.now();
+            if (now - lastMessageTimestamp < MESSAGE_COOLDOWN) {
+                showError("You Can Only Send A Message Every 3 Seconds.");
+                return;
+            }
+            lastMessageTimestamp = now;
+        }
+        if (pendingAttachFile) {
+            await uploadGroupAttachment(pendingAttachFile);
+            pendingAttachFile = null;
+            const preview = document.getElementById("chatFilePreview");
+            if (preview) preview.remove();
+        }
+        if (text) await sendGroupTextMessage(text);
+        chatInput.value = "";
+        toggleReply();
+        if (typeof window._clearChatAttachment === "function") window._clearChatAttachment();
+        return;
+    }
     if (!currentPath) return;
     if (isGuest) {
         let text = chatInput.value.trim();
@@ -2400,6 +3839,12 @@ sendBtn.onclick = async () => {
     if (!currentUser) return;
     let text = chatInput.value.trim();
     if (!text) return;
+    if (!currentPrivateUid && /^\/poll(\s|$)/i.test(text) && (isAdmin || isHAdmin || isOwner || isCoOwner || isTester)) {
+        chatInput.value = "";
+        const ch = currentPath.split("/")[1];
+        openPollCreateModal(ch);
+        return;
+    }
     const muted = await isUserMuted(currentUser.uid);
     if (muted) {
         showError("You Are Muted And Cannot Send Messages Right Now.");
@@ -2473,12 +3918,18 @@ sendBtn.onclick = async () => {
 };
 onAuthStateChanged(auth, async user => {
     if (!user) {
+        if (idleWatcher) {
+            idleWatcher.stop();
+            idleWatcher = null;
+        }
         isGuest = true;
         currentUser = null;
         if (usernameSpan) usernameSpan.textContent = anonDisplayName;
         if (roleSpan) { roleSpan.textContent = "Guest"; roleSpan.style.color = "#aaa"; }
-        if (bioSpan) { bioSpan.textContent = "Browsing as guest"; bioSpan.style.color = "gray"; }
+        if (bioSpan) { bioSpan.textContent = "Guest User"; bioSpan.style.color = "gray"; }
         mentionToggleLabel.style.display = "none";
+        if (statusRow) statusRow.style.display = "none";
+        toggleStatusDropdown(false);
         adminControls.style.display = "none";
         addChannelBtn.style.display = "none";
         _injectGuestNameButton();
@@ -2525,6 +3976,7 @@ onAuthStateChanged(auth, async user => {
     addChannelBtn.style.display = (isCoOwner || isOwner || isTester) ? "inline-block" : "none";
     await ensureDisplayName(user);
     await loadMentionSetting(user);
+    await loadUserStatus(user);
     await loadAllUsernames(); 
     startChannelListeners();
     await renderChannelsFromDB();
@@ -2535,8 +3987,12 @@ onAuthStateChanged(auth, async user => {
         const _urlParams = new URLSearchParams(window.location.search);
         const _dmUid = _urlParams.get("dm");
         const _channel = _urlParams.get("channel");
+        const _joinCode = _urlParams.get("joinCode");
         const _msgId = window.location.hash.replace("#msg-", "").trim() || null;
-        if (_dmUid) {
+        if (_joinCode) {
+            switchChannel("General");
+            handleJoinCodeFromUrl(_joinCode);
+        } else if (_dmUid) {
             getDisplayName(_dmUid).then(name => {
                 openPrivateChat(_dmUid, name).then(() => {
                     if (_msgId) scrollToMessage(_msgId);
@@ -2557,11 +4013,15 @@ onAuthStateChanged(auth, async user => {
         } else {
             switchChannel("General");
         }
-        if (_dmUid || _channel || _msgId) {
+        if (_dmUid || _msgId || _joinCode) {
             history.replaceState(null, "", window.location.pathname);
         }
     }
     startMetadataListener();
+    if (!isGuest) {
+        renderGroupList();
+        setInterval(() => { if (!isGuest) renderGroupList(); }, 15000);
+    }
     dbListen(`mentions/${currentUser.uid}`, (data) => {
         if (data) console.log("Mention: ", data);
     });
@@ -2583,25 +4043,10 @@ onAuthStateChanged(auth, async user => {
     bioSpan.style.fontSize = "60%";
     usernameSpan.textContent = displayName;
     usernameSpan.style.color = DNC;
-    const pfpIndex = (p.pic !== undefined && p.pic !== null) ? p.pic : 0;
-    let profilePics = [];
-    async function loadProfilePics() {
-        const pfpDate = Date.now();
-        try {
-            const res = await fetch(`${pfpDomain}/index.json?t=${pfpDate}`);
-            const files = await res.json();
-            profilePics = files.map(file => `${pfpDomain}/${file}`);
-        } catch (e) {
-            console.error("Failed To Load Profile Pics:", e);
-            profilePics = [`${pfpDomain}/1.jpeg?t=${pfpDate}`];
-        }
-    }
-    await loadProfilePics();
     const sidebarPfp = document.getElementById("sidebarPfp");
     sidebarPfp.style.border = `2px solid ${DNC}`;
     if (sidebarPfp) {
-        const safeIndex = pfpIndex >= 0 && pfpIndex < profilePics.length ? pfpIndex : 0;
-        sidebarPfp.src = profilePics[safeIndex] + "?t=" + Date.now();    
+        sidebarPfp.src = isGuest ? `${pfpDomain}/1.jpeg` : `${pfpDomain}/${user.uid}?t=${Date.now()}`;
     }
 });
 function _injectGuestNameButton() {
@@ -2624,10 +4069,10 @@ function _injectGuestNameButton() {
 }
 async function _promptGuestName() {
     window.location.href = window.location.href;
-    const name = window.prompt("Enter Your Anonymous Display Name (Max 32 Chars):", anonDisplayName);
+    const name = await customPrompt("Enter Your Anonymous Display Name (Max 32 Chars):", false, anonDisplayName);
     if (!name || !name.trim()) return;
     try {
-        const res = await fetch(`${BACKEND}/api/anon-name`, {
+        const res = await fetch(`${BACKEND}/anon-name`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: name.trim(), sessionToken: anonSessionToken })
@@ -2648,13 +4093,39 @@ async function _promptGuestName() {
         showError("Failed To Set Name: " + e.message);
     }
 }
+async function loadMentionableUsers() {
+    const token = ++mentionLoadToken;
+    let body = null;
+    if (currentGroupId) {
+        body = { type: "group", groupId: currentGroupId };
+    } else if (currentPrivateUid) {
+        body = { type: "private", targetUid: currentPrivateUid };
+    } else if (currentPath && currentPath.startsWith("messages/")) {
+        body = { type: "channel", channel: currentPath.split("/")[1] };
+    }
+    if (!body) {
+        mentionableUsernames = [];
+        return;
+    }
+    try {
+        const res = await fetchAPI("mentionable-users", body);
+        if (token !== mentionLoadToken) return;
+        mentionableUsernames = (res.users || []).map(u => u.displayName).filter(Boolean);
+    } catch (e) {
+        if (token !== mentionLoadToken) return;
+        mentionableUsernames = [];
+        console.warn("Failed To Load Mentionable Users:", e);
+    }
+}
 async function loadAllUsernames() {
     const data = await dbGet("users");
     allUsernames = [];
+    knownUserDisplayNames.clear();
     if (data) {
         for (const uid of Object.keys(data)) {
             if (data[uid].profile && data[uid].profile.displayName) {
                 allUsernames.push(data[uid].profile.displayName);
+                knownUserDisplayNames.add(data[uid].profile.displayName.replace(/ 💎/g, "").toLowerCase());
             }
         }
     }
@@ -2759,6 +4230,13 @@ function renderRoleCheckboxes(type) {
         "lanschool",
         "linewize",
         "blocksi",
+        "fortiguard",
+        "lightspeed",
+        "cisco",
+        "contentkeeper",
+        "deledao",
+        "iboss",
+        "barracuda",
         "verified"
     ];
     const roleNames = {
@@ -2776,13 +4254,20 @@ function renderRoleCheckboxes(type) {
         isSus: "Suspicious User",
         mileStone: "Award Badge",
         isGuesser: "Guesser",
-        isUploader: "Uploader",
+        isUploader: "Movie Uploader",
         isLink: "Link Sharer",
         secure: "Securely",
         guardian: "GoGuardian",
         lanschool: "Lanschool",
         linewize: "Linewize",
         blocksi: "Blocksi",
+        fortiguard: "FortiGuard",
+        lightspeed: "LightSpeed",
+        cisco: "Cisco Umbrella",
+        contentkeeper: "ContentKeeper",
+        deledao: "Deledao",
+        iboss: "IBoss",
+        barracuda: "Barracuda",
         verified: "Verified Users"
     };
     return roles.map(r => `
@@ -2813,8 +4298,8 @@ function getSelectedRoles(type) {
     document.body.appendChild(fileInput);
     const attachBtn = document.createElement("button");
     attachBtn.id = "chatAttachBtn";
-    attachBtn.innerHTML = `<i class="bi bi-file-earmark-plus" title="Attach File" style="display:block;padding:10px;font-size:1.5em;"></i>`;
-    attachBtn.style.cssText = "background:none;border:none;cursor:pointer;padding:0px;";
+    attachBtn.innerHTML = `<i class="ic ic-file-earmark-plus" title="Attach File" style="display:block;padding:10px;font-size:1.5em;"></i>`;
+    attachBtn.style.cssText = "background:none;border:none;cursor:pointer;padding:15px;";
     attachBtn.onmouseenter = () => attachBtn.style.color = "#fff";
     attachBtn.onmouseleave = () => attachBtn.style.color = "#aaa";
     attachBtn.onclick = () => fileInput.click();
@@ -2981,7 +4466,7 @@ chatInput.addEventListener("input", () => {
     mentionActive = true;
     triggerIndex = lastAt;
     const typed = value.slice(lastAt + 1, cursorPos).toLowerCase();
-    const matches = allUsernames.filter(name =>
+    const matches = mentionableUsernames.filter(name =>
         name.toLowerCase().startsWith(typed)
     );
     if (matches.length === 0) {
@@ -3124,4 +4609,443 @@ if ("serviceWorker" in navigator) {
             registration.active.postMessage({ type: "chatReady" });
         }
     }).catch(() => {});
+}
+function stopGroupPolling() {
+    if (groupPollTimer) {
+        clearInterval(groupPollTimer);
+        groupPollTimer = null;
+    }
+    renderedGroupMsgIds = new Set();
+    currentGroupMessagesCache = {};
+}
+function switchSidebarTab(tab) {
+    currentSidebarTab = tab;
+    if (tab === "global") {
+        tabGlobalBtn.classList.add("active");
+        tabPrivateBtn.classList.remove("active");
+        globalSection.style.display = "";
+        privateSection.style.display = "none";
+        if (privateMenu) privateMenu.style.display = "none";
+        switchChannel("General");
+        adminControls.style.display = "flex";
+    } else {
+        tabPrivateBtn.classList.add("active");
+        tabGlobalBtn.classList.remove("active");
+        globalSection.style.display = "none";
+        privateSection.style.display = "";
+        stopGroupPolling();
+        currentGroupId = null;
+        currentPath = null;
+        currentPrivateUid = null;
+        detachCurrentMessageListeners();
+        showPrivateMenu();
+        renderGroupList();
+    }
+    if (sidebar.classList.contains("open")) sidebar.classList.toggle("open");
+}
+function showPrivateMenu() {
+    chatLog.innerHTML = "";
+    if (chatLockedDown) {
+        if (privateMenu) privateMenu.style.display = "none";
+        chatLog.style.display = "none";
+        return;
+    } else if (isBanned)  {
+        if (privateMenu) privateMenu.style.display = "none";
+        chatLog.style.display = "none";
+    } else {
+        if (privateMenu) privateMenu.style.display = "flex";
+    }
+    chatLog.style.display = "";
+    if (groupInfoPanel) groupInfoPanel.style.display = "none";
+    if (groupInfoBtn) groupInfoBtn.style.display = "none";
+    if (pinnedMessagesWrap) pinnedMessagesWrap.style.display = "none";
+    togglePinnedMessagesPanel(false);
+    if (channelTopBarName) channelTopBarName.textContent = "";
+    watchTopBarStatus(null);
+    chatMsgFunctions.style.display = "none";
+    sendBtn.style.display = "none";
+    adminControls.style.display = "none";
+}
+function hidePrivateMenu() {
+    if (privateMenu) privateMenu.style.display = "none";
+    chatMsgFunctions.style.display = "";
+    sendBtn.style.display = "";
+}
+if (tabGlobalBtn) tabGlobalBtn.onclick = () => switchSidebarTab("global");
+if (tabPrivateBtn) tabPrivateBtn.onclick = () => switchSidebarTab("private");
+if (dmStartBtn) dmStartBtn.onclick = async () => {
+    const name = (dmUsernameInput?.value || "").trim();
+    if (!name) { showError("Enter A Username First."); return; }
+    const uid = await getUidByDisplayName(name);
+    if (!uid) { showError("User Not Found."); return; }
+    hidePrivateMenu();
+    await openPrivateChat(uid, name);
+    dmUsernameInput.value = "";
+};
+if (groupCreateBtn) groupCreateBtn.onclick = async () => {
+    const name = (groupNameInput?.value || "").trim();
+    if (!name) { showError("Enter A Group Name First."); return; }
+    try {
+        const res = await fetchAPI("groups/create", { name });
+        groupNameInput.value = "";
+        showSuccess?.("Group Created!") ?? null;
+        await renderGroupList();
+        hidePrivateMenu();
+        await openGroupChat(res.group.id);
+    } catch (e) {
+        showError(e?.message || "Could Not Create Group.");
+    }
+};
+if (groupJoinBtn) groupJoinBtn.onclick = async () => {
+    const code = (groupInviteInput?.value || "").trim();
+    if (!code) { showError("Enter An Invite Code First."); return; }
+    try {
+        const res = await fetchAPI("groups/join", { inviteCode: code });
+        groupInviteInput.value = "";
+        await renderGroupList();
+        hidePrivateMenu();
+        await openGroupChat(res.group.id);
+    } catch (e) {
+        showError(e?.message || "Could Not Join Group.");
+    }
+};
+async function renderGroupList() {
+    if (!currentUser || isGuest) return;
+    try {
+        const res = await fetchAPI("groups/mine", {});
+        myGroupsCache = res.groups || [];
+    } catch (e) {
+        return;
+    }
+    privateList.querySelectorAll("li.group-item").forEach(li => li.remove());
+    for (const group of myGroupsCache) {
+        const li = document.createElement("li");
+        li.className = "group-item";
+        li.dataset.groupId = group.id;
+        const left = document.createElement("div");
+        left.className = "left";
+        left.style.display = "flex";
+        left.style.alignItems = "center";
+        left.style.gap = "8px";
+        const icon = document.createElement("span");
+        icon.className = "private-icon";
+        icon.innerHTML = `<i class="ic ic-group"></i>`;
+        const usernameSpan = document.createElement("span");
+        usernameSpan.className = "username";
+        usernameSpan.textContent = group.name;
+        left.appendChild(icon);
+        left.appendChild(usernameSpan);
+        li.appendChild(left);
+        if (group.unread && currentGroupId !== group.id) {
+            const dot = document.createElement("span");
+            dot.className = "notifDot";
+            dot.textContent = "•";
+            left.prepend(dot);
+        }
+        li.dataset.lastActivity = String((group.lastMessage && group.lastMessage.ts) || group.createdAt || 0);
+        li.onclick = () => { hidePrivateMenu(); openGroupChat(group.id); };
+        li.classList.toggle("active", currentGroupId === group.id);
+        privateList.appendChild(li);
+    }
+    resortPrivateList();
+}
+async function openGroupChat(groupId) {
+    if (!currentUser) return;
+    detachCurrentMessageListeners();
+    currentPath = null;
+    currentPrivateUid = null;
+    currentPrivateName = null;
+    watchTopBarStatus(null);
+    stopGroupPolling();
+    currentGroupId = groupId;
+    loadMentionableUsers();
+    hidePrivateMenu();
+    if (groupInfoPanel) groupInfoPanel.style.display = "none";
+    if (groupInfoBtn) groupInfoBtn.style.display = "";
+    if (pinnedMessagesWrap) pinnedMessagesWrap.style.display = "none";
+    togglePinnedMessagesPanel(false);
+    if (chatLockedDown) {
+        chatLog.style.display = "none";
+        return;
+    } else if (isBanned)  {
+        chatLog.style.display = "none";
+    } else {
+        chatLog.style.display = "";
+    }
+    chatLog.innerHTML = "";
+    if (sidebar.classList.contains("open")) sidebar.classList.toggle("open");
+    let attachBtn = document.getElementById("chatAttachBtn");
+    if (attachBtn) attachBtn.style.display = "";
+    await pollGroupOnce(groupId, true);
+    groupPollTimer = setInterval(() => pollGroupOnce(groupId, false), 3000);
+    Array.from(privateList.querySelectorAll("li.group-item")).forEach(li => {
+        li.classList.toggle("active", li.dataset.groupId === String(groupId));
+    });
+}
+async function pollGroupOnce(groupId, isInitialLoad) {
+    if (currentGroupId !== groupId) return;
+    let group;
+    try {
+        const res = await fetchAPI(`groups/${groupId}`, {});
+        group = res.group;
+    } catch (e) {
+        if (isInitialLoad) {
+            showError(e?.message || "Could Not Load Group.");
+            stopGroupPolling();
+        }
+        return;
+    }
+    if (currentGroupId !== groupId) return;
+    currentGroupOwnerUid = group.ownerUid;
+    currentGroupName = group.name;
+    if (channelTopBarName && isInitialLoad) channelTopBarName.textContent = group.name || "";
+    const entries = Object.entries(group.messages || {}).sort((x, y) => {
+        return Number(x[1].timestamp || x[0]) - Number(y[1].timestamp || y[0]);
+    });
+    currentGroupMessagesCache = Object.fromEntries(entries);
+    const fragment = document.createDocumentFragment();
+    let addedAny = false;
+    for (const [id, msg] of entries) {
+        if (renderedGroupMsgIds.has(id)) {
+            const existing = document.getElementById("msg-" + id);
+            if (existing) {
+                const textDiv = existing.querySelector(".msg-text");
+                if (textDiv && msg.t !== undefined) {
+                    let currentSafe = buildSafeText(msg.t);
+                    currentSafe = await processDiscordMentions(currentSafe);
+                    if (textDiv.dataset.rawText !== msg.t) {
+                        textDiv.innerHTML = currentSafe;
+                        textDiv.dataset.rawText = msg.t;
+                        initAudioPlayers(textDiv);
+                    }
+                }
+                const reactionsRow = existing.querySelector(".reactions-row");
+                if (reactionsRow) {
+                    const newKey = JSON.stringify(msg.reactions || {});
+                    if (reactionsRow.dataset.reactionsKey !== newKey) {
+                        reactionsRow.dataset.reactionsKey = newKey;
+                        renderReactionsInRow(reactionsRow, msg.reactions);
+                    }
+                }
+            }
+            continue;
+        }
+        renderedGroupMsgIds.add(id);
+        const div = await renderMessageInstant(id, msg.system ? { ...msg, s: "system" } : msg);
+        if (div) {
+            if (msg.system) {
+                const nameEl = div.querySelector("#msgName");
+                if (nameEl) nameEl.textContent = "System";
+            }
+            const reactionsRow = div.querySelector(".reactions-row");
+            if (reactionsRow) reactionsRow.dataset.reactionsKey = JSON.stringify(msg.reactions || {});
+            fragment.appendChild(div);
+            addedAny = true;
+        }
+    }
+    if (addedAny) {
+        chatLog.appendChild(fragment);
+        initAudioPlayers(chatLog);
+        scrollToBottom(false);
+    }
+    if (isInitialLoad || addedAny) {
+        fetchAPI(`groups/${groupId}/read`, {}).then(() => {
+            const li = privateList.querySelector(`li.group-item[data-group-id="${groupId}"]`);
+            if (li) {
+                const dot = li.querySelector(".notifDot");
+                if (dot) dot.remove();
+            }
+        }).catch(() => {});
+    }
+}
+if (groupInfoBtn) groupInfoBtn.onclick = async () => {
+    if (!currentGroupId) return;
+    await openGroupInfoPanel(currentGroupId);
+};
+if (groupInfoCloseBtn) groupInfoCloseBtn.onclick = () => {
+    if (groupInfoPanel) groupInfoPanel.style.display = "none";
+    chatLog.style.display = "";
+    chatMsgFunctions.style.display = "flex";
+    sendBtn.style.display = "block";
+};
+async function openGroupInfoPanel(groupId) {
+    let data;
+    chatMsgFunctions.style.display = "none";
+    sendBtn.style.display = "none";
+    try {
+        data = await fetchAPI(`groups/${groupId}/members`, {});
+    } catch (e) {
+        showError(e?.message || "Could Not Load Group Info.");
+        return;
+    }
+    groupInfoName.textContent = data.name;
+    groupInfoInviteLink.textContent = data.inviteLink || "";
+    groupInfoInviteCode.textContent = data.inviteCode || "";
+    const amOwner = data.ownerUid === currentUser?.uid;
+    groupInfoOwnerActions.style.display = amOwner ? "flex" : "none";
+    groupInfoLeaveActions.style.display = amOwner ? "none" : "flex";
+    for (const member of data.members) {
+        const li = document.createElement("li");
+        const img = document.createElement("img");
+        img.src = member.uid ? `${pfpDomain}/${member.uid}?t=${Date.now()}` : `${pfpDomain}/1.jpeg`;
+        const nameWrap = document.createElement("div");
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = member.displayName;
+        nameWrap.appendChild(nameSpan);
+        if (member.isOwner) {
+            const ownerLabel = document.createElement("span");
+            ownerLabel.className = "owner-label";
+            ownerLabel.textContent = "Owner";
+            nameWrap.appendChild(ownerLabel);
+        }
+        li.appendChild(img);
+        li.appendChild(nameWrap);
+        if (amOwner && !member.isOwner) {
+            const kickBtn = document.createElement("button");
+            kickBtn.className = "kickMemberBtn";
+            kickBtn.textContent = "Kick";
+            kickBtn.onclick = () => {
+                showConfirm(`Kick ${member.displayName} From The Group?`, async (ok) => {
+                    if (!ok) return;
+                    try {
+                        await fetchAPI(`groups/${groupId}/kick`, { targetUid: member.uid });
+                        await openGroupInfoPanel(groupId);
+                    } catch (e) {
+                        showError(e?.message || "Could Not Kick Member.");
+                    }
+                });
+            };
+            li.appendChild(kickBtn);
+        }
+        groupInfoMembers.appendChild(li);
+    }
+    if (groupInfoPanel) groupInfoPanel.style.display = "block";
+    chatLog.style.display = "none";
+    setTimeout(() => {
+        if (groupInfoPanel && groupInfoPanel.style.display === "none") chatLog.style.display = "";
+    }, 0);
+}
+if (groupRenameBtn) groupRenameBtn.onclick = async () => {
+    if (!currentGroupId) return;
+    const newName = await customPrompt("New Group Name:", false, currentGroupName || "");
+    if (!newName || !newName.trim()) return;
+    fetchAPI(`groups/${currentGroupId}/rename`, { name: newName.trim() })
+        .then(() => { renderGroupList(); openGroupInfoPanel(currentGroupId); })
+        .catch(e => showError(e?.message || "Could Not Rename Group."));
+};
+if (groupResetInviteBtn) groupResetInviteBtn.onclick = () => {
+    if (!currentGroupId) return;
+    showConfirm("Reset The Invite Link? The Old Link Will Stop Working.", async (ok) => {
+        if (!ok) return;
+        try {
+            await fetchAPI(`groups/${currentGroupId}/reset-invite`, {});
+            await openGroupInfoPanel(currentGroupId);
+        } catch (e) {
+            showError(e?.message || "Could Not Reset Invite.");
+        }
+    });
+};
+if (groupTransferBtn) groupTransferBtn.onclick = async () => {
+    if (!currentGroupId) return;
+    const username = await customPrompt("Transfer Ownership To (Username):", false);
+    if (!username || !username.trim()) return;
+    const targetUid = await getUidByDisplayName(username.trim());
+    if (!targetUid) { showError("User Not Found."); return; }
+    showConfirm(`Transfer Ownership Of This Group To ${username}?`, async (ok) => {
+        if (!ok) return;
+        try {
+            await fetchAPI(`groups/${currentGroupId}/transfer`, { targetUid });
+            await openGroupInfoPanel(currentGroupId);
+        } catch (e) {
+            showError(e?.message || "Could Not Transfer Ownership.");
+        }
+    });
+};
+if (groupDeleteBtn) groupDeleteBtn.onclick = () => {
+    if (!currentGroupId) return;
+    showConfirm("Delete This Group? This Cannot Be Undone.", async (ok) => {
+        if (!ok) return;
+        try {
+            const token = await getAuthToken();
+            const delRes = await fetch(`${a}/groups/${currentGroupId}`, {
+                method: "DELETE",
+                headers: { "Authorization": "Bearer " + token }
+            });
+            if (!delRes.ok) {
+                const err = await delRes.json().catch(() => ({}));
+                throw new Error(err.error || "Delete Failed");
+            }
+            stopGroupPolling();
+            currentGroupId = null;
+            groupInfoPanel.style.display = "none";
+            chatLog.style.display = "";
+            showPrivateMenu();
+            renderGroupList();
+        } catch (e) {
+            showError(e?.message || "Could Not Delete Group.");
+        }
+    });
+};
+if (groupLeaveBtn) groupLeaveBtn.onclick = () => {
+    if (!currentGroupId) return;
+    showConfirm("Leave This Group?", async (ok) => {
+        if (!ok) return;
+        try {
+            await fetchAPI(`groups/${currentGroupId}/leave`, {});
+            stopGroupPolling();
+            currentGroupId = null;
+            groupInfoPanel.style.display = "none";
+            chatLog.style.display = "";
+            showPrivateMenu();
+            renderGroupList();
+        } catch (e) {
+            showError(e?.message || "Could Not Leave Group.");
+        }
+    });
+};
+async function sendGroupTextMessage(text) {
+    if (!currentGroupId) return;
+    try {
+        await fetchAPI(`groups/${currentGroupId}/message`, { text, replyTo: replyMsgId || undefined });
+    } catch (e) {
+        showError(e?.message || "Could Not Send Message.");
+    }
+}
+async function uploadGroupAttachment(file) {
+    if (!currentGroupId || !file) return;
+    try {
+        const token = await getAuthToken();
+        const form = new FormData();
+        form.append("file", file);
+        if (replyMsgId) form.append("replyTo", replyMsgId);
+        const res = await fetch(`${a}/groups/${currentGroupId}/upload`, {
+            method: "POST",
+            headers: token ? { "Authorization": "Bearer " + token } : {},
+            body: form
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Upload Failed");
+    } catch (e) {
+        showError("File Upload Failed: " + (e?.message || e));
+    }
+}
+async function handleJoinCodeFromUrl(joinCode) {
+    if (!joinCode) {
+        const params = new URLSearchParams(window.location.search);
+        joinCode = params.get("joinCode");
+    }
+    if (!joinCode || !currentUser || isGuest) return;
+    try {
+        const res = await fetchAPI("groups/join", { inviteCode: joinCode });
+        switchSidebarTab("private");
+        await renderGroupList();
+        await openGroupChat(res.group.id);
+        showSuccess?.(`Joined "${res.group.name}"!`);
+    } catch (e) {
+        showError(e?.message || "Could Not Join Group From Invite Link.");
+    } finally {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("joinCode");
+        window.history.replaceState({}, "", url.toString());
+    }
 }

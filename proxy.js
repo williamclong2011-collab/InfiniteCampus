@@ -16,46 +16,67 @@ const reloadBtn = document.getElementById("nav-reload");
 const stockSW = "./sw.js";
 const working = document.getElementById("workingPxy");
 const broken = document.getElementById("brokenPxy");
-const swAllowedHostnames = ["localhost", "127.0.0.1", "infinitecampus.xyz", "instructure.space", "www.infinitecampus.xyz"];
 let fullscreenBtn = null;
 let isFullscreen = false;
 let scramjet = null;
+console.log("[proxy] location.hostname (n) =", n);
+console.log("[proxy] location.href =", location.href);
+console.log("[proxy] $scramjetLoadController available:", typeof $scramjetLoadController !== "undefined");
 if (typeof $scramjetLoadController !== "undefined") {
-    const { ScramjetController } = $scramjetLoadController();
-    scramjet = new ScramjetController({
-        files: {
-            wasm: "/scram/scramjet.wasm.wasm",
-            all: "/scram/scramjet.all.js",
-            sync: "/scram/scramjet.sync.js",
-        },
-    });
-    scramjet.init();
+    try {
+        const { ScramjetController } = $scramjetLoadController();
+        const scramjetFiles = {
+            wasm: `https://${n}/scram/scramjet.wasm.wasm`,
+            all: `https://${n}/scram/scramjet.all.js`,
+            sync: `https://${n}/scram/scramjet.sync.js`,
+        };
+        console.log("[proxy] scramjet file URLs:", scramjetFiles);
+        scramjet = new ScramjetController({ files: scramjetFiles });
+        scramjet.init();
+        console.log("[proxy] scramjet initialized successfully");
+    } catch (err) {
+        console.error("[proxy] scramjet initialization FAILED:", err);
+        scramjet = null;
+    }
+} else {
+    console.warn("[proxy] $scramjetLoadController is undefined — scramjet.all.js probably didn't load. Check network tab for a failed/404 request to /scram/scramjet.all.js");
 }
 const connection = new BareMux.BareMuxConnection("/baremux/worker.js");
 let blockedUrls = [];
 async function loadBlockedUrls() {
+    const endpoint = `https://${n}/edit-urls`;
+    console.log("[proxy] fetching blocked urls from", endpoint);
     try {
-        const res = await fetch("/edit-urls");
+        const res = await fetch(endpoint);
+        console.log("[proxy] /edit-urls response status:", res.status);
         if (!res.ok) throw new Error("Failed To Fetch URLs");
         const data = await res.json();
         blockedUrls = Object.entries(data).map(([url, reason]) => ({
             url,
             reason
         }));
-    } catch {
+        console.log("[proxy] loaded", blockedUrls.length, "blocked url entries");
+    } catch (err) {
+        console.error("[proxy] loadBlockedUrls FAILED:", err);
         blockedUrls = [];
     }
 }
 async function registerSW() {
 	if (!navigator.serviceWorker) {
-		if (
-			location.protocol !== "https:" &&
-			!swAllowedHostnames.includes(location.hostname)
-		)
+		console.error("[proxy] navigator.serviceWorker is unavailable (page not served over https/localhost, or unsupported browser)");
 		throw new Error("Service Workers Cannot Be Registered Without https.");
-		throw new Error("Your Browser Doesn't Support Service Workers.");
 	}
-	await navigator.serviceWorker.register(stockSW);
+	console.log("[proxy] registering service worker:", stockSW);
+	try {
+		const reg = await navigator.serviceWorker.register(stockSW);
+		console.log("[proxy] service worker registered, scope:", reg.scope);
+		if (reg.installing) console.log("[proxy] sw state: installing");
+		if (reg.waiting) console.log("[proxy] sw state: waiting");
+		if (reg.active) console.log("[proxy] sw state: active");
+	} catch (err) {
+		console.error("[proxy] service worker registration FAILED:", err);
+		throw err;
+	}
 }
 function getBaseDomain(input) {
     try {
@@ -88,12 +109,108 @@ function checkBlocked(inputUrl) {
     return null;
 }
 loadBlockedUrls();
+const SEARCH_ENGINES = [
+    { key: 'google', name: 'Google', desc: 'Most results', url: 'https://www.google.com/search?q=%s' },
+    { key: 'brave', name: 'Brave', desc: 'Independent index', url: 'https://search.brave.com/search?q=%s' },
+    { key: 'duckduckgo', name: 'DuckDuckGo', desc: 'Private, Bing-backed', url: 'https://duckduckgo.com/?q=%s' },
+    { key: 'bing', name: 'Bing', desc: 'Microsoft', url: 'https://www.bing.com/search?q=%s' },
+    { key: 'startpage', name: 'Startpage', desc: 'Google results, no tracking', url: 'https://www.startpage.com/sp/search?query=%s' },
+    { key: 'ecosia', name: 'Ecosia', desc: 'Plants trees', url: 'https://www.ecosia.org/search?q=%s' },
+    { key: 'wikipedia', name: 'Wikipedia', desc: 'Encyclopedia only', url: 'https://en.wikipedia.org/wiki/Special:Search?search=%s' },
+    { key: 'custom', name: 'Custom', desc: 'Your own URL with %s', url: null }
+];
+const DEFAULT_SEARCH_ENGINE_KEY = 'google';
+function applySavedSearchEngineToAddressBar() {
+    const savedUrl = localStorage.getItem('searchEngineUrl');
+    if (savedUrl && searchEngine) {
+        searchEngine.value = savedUrl;
+    } else if (searchEngine) {
+        searchEngine.value = SEARCH_ENGINES.find(e => e.key === DEFAULT_SEARCH_ENGINE_KEY).url;
+    }
+}
+applySavedSearchEngineToAddressBar();
+function initSearchEnginePopup() {
+    const trigger = document.getElementById("searchEngineTrigger");
+    const popup = document.getElementById("miniEnginePopup");
+    const grid = document.getElementById("miniSearchEngineGrid");
+    const customGroup = document.getElementById("miniCustomEngineGroup");
+    const customInput = document.getElementById("miniCustomEngineInput");
+    const saveCustomBtn = document.getElementById("miniSaveCustomEngineBtn");
+    if (!trigger || !popup || !grid) return;
+    function getSelectedId() {
+        return localStorage.getItem('searchEngineId') || DEFAULT_SEARCH_ENGINE_KEY;
+    }
+    function renderGrid() {
+        const selectedId = getSelectedId();
+        grid.innerHTML = SEARCH_ENGINES.map(se => `
+            <div class="search-engine-item ${se.key === selectedId ? 'selected' : ''}" data-engine="${se.key}">
+                <span class="search-engine-title">${se.name}</span>
+                <span class="search-engine-desc">${se.desc}</span>
+            </div>
+        `).join('');
+        grid.querySelectorAll('.search-engine-item').forEach((item) => {
+            item.addEventListener('click', () => {
+                const key = item.dataset.engine;
+                const engine = SEARCH_ENGINES.find(se => se.key === key);
+                if (!engine) return;
+                if (key === 'custom') {
+                    grid.querySelectorAll('.search-engine-item').forEach((el) => el.classList.remove('selected'));
+                    item.classList.add('selected');
+                    customGroup.style.display = '';
+                    const existingCustom = localStorage.getItem('searchEngineCustomUrl');
+                    if (existingCustom && customInput) customInput.value = existingCustom;
+                    if (customInput) customInput.focus();
+                    return;
+                }
+                customGroup.style.display = 'none';
+                applyEngine(engine.key, engine.url, engine.name);
+            });
+        });
+    }
+    function updateTooltip(name) {
+        trigger.title = `Currently Selected: ${name}`;
+    }
+    function applyEngine(key, url, name) {
+        localStorage.setItem('searchEngineId', key);
+        localStorage.setItem('searchEngineUrl', url);
+        if (searchEngine) searchEngine.value = url;
+        updateTooltip(name);
+        renderGrid();
+    }
+    const initialId = getSelectedId();
+    const initialEngine = SEARCH_ENGINES.find(se => se.key === initialId) || SEARCH_ENGINES.find(se => se.key === DEFAULT_SEARCH_ENGINE_KEY);
+    updateTooltip(initialEngine.name);
+    if (initialId === 'custom') {
+        customGroup.style.display = '';
+        const existingCustom = localStorage.getItem('searchEngineCustomUrl');
+        if (existingCustom && customInput) customInput.value = existingCustom;
+    }
+    renderGrid();
+    if (saveCustomBtn) {
+        saveCustomBtn.addEventListener('click', () => {
+            const url = customInput.value.trim();
+            if (!url || !url.includes('%s')) return;
+            localStorage.setItem('searchEngineCustomUrl', url);
+            applyEngine('custom', url, 'Custom');
+        });
+    }
+    trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        popup.classList.toggle('shows');
+    });
+    document.addEventListener('click', (e) => {
+        if (!popup.contains(e.target) && !trigger.contains(e.target)) {
+            popup.classList.remove('shows');
+        }
+    });
+}
+document.addEventListener("DOMContentLoaded", initSearchEnginePopup);
 let tabs = [];
 let activeTabId = null;
 let tabCounter = 0;
 const newTabBtn = document.createElement("div");
 newTabBtn.className = "chrome-newtab";
-newTabBtn.innerHTML = `<i class="bi bi-plus" title="New Tab"></i>`;
+newTabBtn.innerHTML = `<i class="ic ic-plus" title="New Tab"></i>`;
 tabsContainer.appendChild(newTabBtn);
 newTabBtn.addEventListener("click", () => {
     createTab(true);
@@ -105,7 +222,7 @@ function createTab(isNTP = false) {
     tabBtn.innerHTML = `
         <img class="tab-favicon" src="" style="width:16px;height:16px;margin-right:6px;display:none;">
         <span class="tab-title">${isNTP ? "New Tab" : "Loading..."}</span>
-        <i class="bi bi-x close-tab" title="Close Tab"></i>
+        <i class="ic ic-x close-tab" title="Close Tab"></i>
     `;
     tabsContainer.insertBefore(tabBtn, newTabBtn);
     requestAnimationFrame(() => {
@@ -267,7 +384,7 @@ function closeTab(id) {
 function createFullscreenButton() {
     if (fullscreenBtn) return;
     fullscreenBtn = document.createElement("button");
-    fullscreenBtn.innerHTML = `<i class="bi bi-fullscreen"></i>`;
+    fullscreenBtn.innerHTML = `<i class="ic ic-fullscreen"></i>`;
     fullscreenBtn.style.position = "fixed";
     fullscreenBtn.style.bottom = "40px";
     fullscreenBtn.style.right = "20px";
@@ -292,12 +409,12 @@ document.addEventListener("fullscreenchange", () => {
     if (!tab) return;
     if (document.fullscreenElement) {
         isFullscreen = true;
-        if (fullscreenBtn) fullscreenBtn.innerHTML = `<i class="bi bi-fullscreen-exit"></i>`;
+        if (fullscreenBtn) fullscreenBtn.innerHTML = `<i class="ic ic-fullscreen-exit"></i>`;
         tab.frame.style.width = "100vw";
         tab.frame.style.height = "100vh";
     } else {
         isFullscreen = false;
-        if (fullscreenBtn) fullscreenBtn.innerHTML = `<i class="bi bi-fullscreen"></i>`;
+        if (fullscreenBtn) fullscreenBtn.innerHTML = `<i class="ic ic-fullscreen"></i>`;
         tab.frame.style.width = "";
         tab.frame.style.height = "";
     }
@@ -335,6 +452,7 @@ async function loadIntoActiveTab(input) {
     try {
         await registerSW();
     } catch (err) {
+        console.error("[proxy] aborting load — service worker failed:", err);
         pxyErr.style.display = "block";
         error.textContent = "Service Worker failed.";
         errorCode.textContent = err.toString();
@@ -346,14 +464,35 @@ async function loadIntoActiveTab(input) {
         "://" +
         location.host +
         "/wisp/";
-    if ((await connection.getTransport()) !== "/libcurl/index.mjs") {
-        await connection.setTransport("/libcurl/index.mjs", [
-            { websocket: wispUrl },
-        ]);
+    console.log("[proxy] wispUrl =", wispUrl);
+    console.log("[proxy] bare-mux connection object:", connection);
+    try {
+        const currentTransport = await connection.getTransport();
+        console.log("[proxy] current bare-mux transport:", currentTransport);
+        if (currentTransport !== "/libcurl/index.mjs") {
+            console.log("[proxy] setting bare-mux transport to /libcurl/index.mjs with websocket:", wispUrl);
+            await connection.setTransport("/libcurl/index.mjs", [
+                { websocket: wispUrl },
+            ]);
+            console.log("[proxy] transport set successfully");
+        } else {
+            console.log("[proxy] transport already set, skipping");
+        }
+    } catch (err) {
+        console.error("[proxy] setting bare-mux transport FAILED:", err);
+        pxyErr.style.display = "block";
+        error.textContent = "Proxy transport failed.";
+        errorCode.textContent = err.toString();
+        hidePxyLoader();
+        return;
+    }
+    if (!scramjet) {
+        console.error("[proxy] scramjet is null — cannot navigate frame. See earlier [proxy] logs for why scramjet failed to initialize.");
     }
     tab.displayUrl = input;
     addressBar.value = input;
     const url = search(input, searchEngine.value);
+    console.log("[proxy] navigating tab", tab.id, "to resolved url:", url);
     tab.tabBtn.querySelector(".tab-title").textContent = "Loading...";
     tab.isLoading = true;
     showPxyLoader();
@@ -385,7 +524,12 @@ async function loadIntoActiveTab(input) {
             createFullscreenButton();
         }    
     };
-    tab.frameObj.go(url);
+    try {
+        tab.frameObj.go(url);
+        console.log("[proxy] tab.frameObj.go() called successfully for", url);
+    } catch (err) {
+        console.error("[proxy] tab.frameObj.go() threw:", err);
+    }
 }
 form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -434,7 +578,7 @@ if ("getBattery" in navigator) {
 }
 const hosturl = window.location.host;
 function setRandomPhrase() { 
-    const phrases = [ 
+        const phrases = [ 
         "Walking By The Wall",
         "The Shadows Will Not Fall",
         "Is Silently Ignored",
@@ -483,12 +627,18 @@ function setRandomPhrase() {
         "Life Is A Highway",
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         `${btMsg}`,
-        "https://discord.gg/4d9hJSVXca",
+        `${i}`,
         "Kim Jong Un Is Master Of Goon",
         "Rest In Peace My Granny She Got Hit By A Bazooka",
+        "Yeah, I think about her every time I hit the hookah",
         "Kaboom, Kablow, Kaboom",
-        "justinjustin2008 Will Save Us All",
-        "What Is This Diddyblud Doin On The Calculator"
+        "I Was In My Room Trying To Teach My Little Sister",
+        "Then I Heard A Boom And It Sounded Like A Missle",
+        "Who That Is, What That Was",
+        "Oh That Granny, Oh She Done",
+        "I Was In The Matrix, But The Matrix Was Too Slow So I Had To Come Here",
+        "What Is This Diddyblud Doin On The Calculator",
+        "EXCUSE ME SIR"
     ]; 
     const random = phrases[Math.floor(Math.random() * phrases.length)];
     document.getElementById("phrase").textContent = random; 
@@ -536,6 +686,7 @@ document.querySelectorAll("#pxyApps div").forEach(app => {
 });
 createTab(true);
 document.addEventListener("DOMContentLoaded", function () {
+    console.log("[proxy] DOMContentLoaded — scramjet is", scramjet ? "initialized" : "NULL (showing broken screen)");
     if (!scramjet) {
         working.style.display = "none";
         broken.style.display = "block";

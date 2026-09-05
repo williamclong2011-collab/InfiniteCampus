@@ -1,29 +1,47 @@
 TODO
-    General:
-        Combine The Music Streaming Page With MP3 Player Page
-    Website Chat:
-        Need To Do:
-            Fix Replies From Discord:
-                Make It So When A Person From Discord Replies To A Website Chat Message It Will Show The Website Chat Message Instead Of The Linked Message
-            Add Group Chats:
-                Make It So Group Chats Can Have A Max Of 10 Members
-                Make It So Only People Inside Of Group Chats Can Be Mentioned Inside Of Them
-                Make It So Owners Of A Group Chat Can Add/Remove Members
-                Make It So Group Chats Have An Invite Code
-                Make It So The Owner Of The Group Chat Has A Special Icon
-            
+    Website Chat:            
         Might Do:
             Map Discord Roles To Website Roles To Allow Deleting Of Discord Messages From Website:
                 Allow Users With Owner Role To Delete All Discord Messages
                 Allow Co Owners To Delete Messages Sent By Lower Roles
             Allow Deleting Of Your Discord Messages If Your Account And Discord Are Connected
-            Fix Discord Username Mentions In Chat
-            Fix Discord Channel Mentions In Chat
-            Add Codeblocks
     The Final Goal Is To Be Able To Make It So I Dont Have To Edit The Code Of The Site To Edit Stuff Around The Site
         Here Are The Steps To Do So:
-            Make Games List Come From Server Instead Of Locally
-            Allow Editing And Deleting Games From Site
-            Allow Deleting Movies From Site
             Add User Pagnation To Chat, Admin Chat Panel, Articles, Movies, Movie Applicants, Poll Results, And Partners List
             Add Pagnation To Movies, Movie Applicants, Articles, Partners, Future Updates, Updates, Poll Results, And Games List (When Added)
+
+
+final things:
+    DONE: different games sources
+
+    2: remove updates page and replace with patch notes page that will get from a discord channel for the messages.
+
+    3: hardcode endpoints for everything instead of the current rules system
+
+    4: youtube to mp3 and mp4 converter
+
+    5: mp3 file tag editor like tagmp3
+
+    DONE: make it so the website chat message shows up if the pinned message on the discord is from the website chat.
+
+    7: allow for higher role message editing and deleting in group chats
+
+    DONE: make it so if a linked channel is mentioned in the chat, clicking on it will take you to that channel
+
+    DONE: make left click on links just do the default thing
+
+    DONE: Custom Imports
+
+    DONE: make it so every url can route to the api so the api cant be blocked.
+
+    12: Fix Anonymous File Uploads Sometimes Not Showing Up In The Chat
+
+    DONE: Add Chat Polls
+
+
+
+Updated Ui:
+    DONE: Fix transparent theme logo
+    DONE: combine themed elements with accent
+    DONE: data sync between devices through switch-like transfer system.
+    DONE: make it so theme elements dont load when not on tab

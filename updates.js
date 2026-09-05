@@ -170,14 +170,14 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 				div.innerHTML = `
 					<div style="display:flex; align-items:center; justify-content:center;">
 					<button class="edit-btn button" data-key="${key}" style="display:none">
-						<i class='bi bi-pencil-square'>
+						<i class='ic ic-pencil-square'>
 						</i>
 					</button>
 					<div class="btxt" style="width:75%;" data-key="${key}">
 						${note.text}
 					</div>
 					<button class="delete-btn button" data-key="${key}" style="display:none">
-						<i class='bi bi-trash-fill'>
+						<i class='ic ic-trash'>
 						</i>
 					</button>
 					</div>
@@ -248,7 +248,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
                 message: message,
                 channelId: channelId
             })
-        }).catch((e) => console.error("Error: Server Post Error:", e));
+        }).catch((e) => console.error("Error: server post error:", e));
     }
     async function enforceUpdateLimit(snapshot) {
         if (cleanupRunning) return;
@@ -279,7 +279,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
             dbPush('updates', {
                 content,
                 timestamp: Date.now()
-            }).then(() => showSuccess("Update Added."));
+            }).then(() => showSuccess("Update added."));
             contentEl.value = "";
         }
     }
@@ -292,7 +292,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
     }
     async function editUpdate(key, currentText) {
         if (!isOwner && !isTester && !isDev) return;
-        const newText = await customPrompt("Edit Update:", false, currentText);
+        const newText = await customPrompt("Edit update:", false, currentText);
         if (newText !== null && newText.trim() !== "") {
             dbUpdate("updates/" + key, {
                 content: newText.trim()
@@ -319,11 +319,11 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
             if (isOwner || isTester || isDev) {
                 div.innerHTML = `
                     <button class="button" onclick="editUpdate('${update.key}', \`${update.content.replace(/`/g, "\\`")}\`)">
-                        <i class='bi bi-pencil-square'></i>
+                        <i class='ic ic-pencil-square'></i>
                     </button>
                     ${index + 1}. ${update.content}
                     <button class="button" onclick="deleteUpdate('${update.key}')">
-                        <i class='bi bi-trash-fill'></i>
+                        <i class='ic ic-trash'></i>
                     </button>
                 `;
             } else {
@@ -425,18 +425,15 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 	let existingContent = "";
 	let currentSlug = null;
 	let renderArticle = null;
-	let pfpDomain = "/pfps";
-	if (!(e.includes(window.location.host))) {
-		pfpDomain = "https://raw.githubusercontent.com/InfiniteCampus41/InfiniteCampus/refs/heads/main/pfps"; 
-	}
+	const pfpDomain = `${a}/pfps`;
 	const ROLE_CONFIG = [
-		{key: "isOwner",innerHTML: `<i class="bi bi-shield-plus" style="color:lime" title="Owner"></i>`},
-		{key: "isTester",innerHTML: `<i class="fa-solid fa-cogs" style="color:darkgoldenrod" title="Tester"></i>`},
-		{key: "isCoOwner",innerHTML: `<i class="bi bi-shield-fill" style="color:lightblue" title="Co-Owner"></i>`},
-		{key: "isHAdmin",innerHTML: `<i class="fa-solid fa-shield-halved" style="color:#00cc99" title="Head Admin"></i>`},
-		{key: "isAdmin",innerHTML: `<i class="bi bi-shield" style="color:dodgerblue" title="Admin"></i>`},
-		{key: "isDev",innerHTML: `<i class="bi bi-code-square" style="color:green" title="This User Is A Developer For Infinitecampus.xyz"></i>`},
-		{key: "isPartner",innerHTML: `<i class="fa fa-handshake" style="color:cornflowerblue" title="This User Is A Partner Of Infinite Campus"></i>`}
+		{key: "isOwner",innerHTML: `<i class="ic ic-shield-plus" style="color:lime" title="Owner"></i>`},
+		{key: "isTester",innerHTML: `<i class="ic ic-cogs" style="color:darkgoldenrod" title="Tester"></i>`},
+		{key: "isCoOwner",innerHTML: `<i class="ic ic-shield-fill" style="color:lightblue" title="Co-owner"></i>`},
+		{key: "isHAdmin",innerHTML: `<i class="ic ic-shield-halved" style="color:#00cc99" title="Head admin"></i>`},
+		{key: "isAdmin",innerHTML: `<i class="ic ic-shield" style="color:dodgerblue" title="Admin"></i>`},
+		{key: "isDev",innerHTML: `<i class="ic ic-code-square" style="color:green" title="This user is a developer for Infinite Campus"></i>`},
+		{key: "isPartner",innerHTML: `<i class="ic ic-handshake" style="color:cornflowerblue" title="This user is a partner of Infinite Campus"></i>`}
 	];
 	async function loadUserRoles(uid) {
 		const roleSnap = await dbGet(`users/${uid}/profile`);
@@ -469,18 +466,6 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 			}
 		}
 	});
-	let profilePics = [];
-	async function loadProfilePics() {
-		const pfpDate = Date.now();
-		try {
-			const res = await fetch(`${pfpDomain}/index.json?t=${pfpDate}`);
-			const files = await res.json();
-			profilePics = files.map(file => `${pfpDomain}/${file}?t=${pfpDate}`);
-		} catch (e) {
-			console.error("Failed To Load Profile Pics:", e);
-			profilePics = [`${pfpDomain}/1.jpeg?t=${pfpDate}`];
-		}
-	}
 	function slugify(text) {
 		return text.toLowerCase()
 		.replace(/[^a-z0-9]+/g, '-')
@@ -508,7 +493,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 		overlay.innerHTML = `
 			<div style="background:#111;padding:30px;width:500px;max-width:90%;border-radius:8px;">
 				<h2 class="tptxt">
-					Create New Article
+					Create new article
 				</h2>
 				<label class="btxt">
 					Title
@@ -525,7 +510,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 				<br>
 				<br>
 				<label class="btxt">
-					Article Content (Supports HTML)
+					Article content (Supports HTML)
 				</label>
 				<br>
 				<textarea id="new-content" rows="10" class="button" style="width:100%;"></textarea>
@@ -546,7 +531,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 			const desc = document.getElementById("new-description").value.trim();
 			const content = document.getElementById("new-content").value.trim();
 			if (!title || !desc || !content) {
-				showError("All Fields Required.");
+				showError("All fields required.");
 				return;
 			}
 			const articlesSnap = await dbGet("articles");
@@ -566,12 +551,11 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 				content
 			});
 			overlay.remove();
-			showSuccess("Article Created!");
+			showSuccess("Article created!");
 		};
 	}
 	document.addEventListener("DOMContentLoaded", async () => {
 		await authReadyPromise;
-		await loadProfilePics();
 		const container = document.getElementById("articles-container");
 		const searchInput = document.getElementById("search");
 		if (container) {
@@ -626,15 +610,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 													break;
 												}
 											}
-											const picValue = profile.pic;
-											let picSrc = "";
-											if (picValue && !isNaN(picValue) && profilePics[picValue]) {
-												picSrc = profilePics[picValue];
-											} else if (picValue && picValue.startsWith("http")) {
-												picSrc = picValue;
-											} else {
-												picSrc = profilePics[0] || "";
-											}
+											const picSrc = `${pfpDomain}/${article.author}?t=${Date.now()}`;
 											return `
 												<img src="${picSrc}" width="30" height="30">
 													<span style="color:${userData?.settings.color || ''}">
@@ -654,7 +630,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 							const personDiv = div.querySelector("#person");
 							personDiv.addEventListener("click", (e) => {
 								e.stopPropagation();
-								window.location.href = `InfiniteAccounts.html?user=${article.author}`;
+								window.location.href = `InfiniteAccounts.html?user=${article.author}&ref=news`;
 							});
 							dbListen("articles/" + slug, (data) => {
     							const views = data?.views || 0;
@@ -689,9 +665,13 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 			if (!currentArticleData || !currentArticleData.title) return;
 			if (!sessionStorage.getItem(sessionKey)) {
 				const current = await dbGet("articles/" + currentSlug);
-				await dbUpdate("articles/" + currentSlug, {
-					views: (current?.views || 0) + 1
-				});
+				try {
+					await dbUpdate("articles/" + currentSlug, {
+						views: (current?.views || 0) + 1
+					});
+				} catch {
+					console.error("Failed to increase view count");
+				}
 				sessionStorage.setItem(sessionKey, "true");
 			}
 			document.getElementById("article-title").innerText = currentArticleData.title;
@@ -706,18 +686,10 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 							break;
 						}
 					}
-					const picValue = profile.pic;
-					let picSrc = "";
-					if (picValue && !isNaN(picValue) && profilePics[picValue]) {
-						picSrc = profilePics[picValue];
-					} else if (picValue && picValue.startsWith("http")) {
-						picSrc = picValue;
-					} else {
-						picSrc = profilePics[0] || "";
-					}
+					const picSrc = `${pfpDomain}/${currentArticleData.author}?t=${Date.now()}`;
 					return `
 						<img src="${picSrc}" width="40" height="40">
-						<a href='InfiniteAccounts.html?user=${currentArticleData.author}'>
+						<a href='InfiniteAccounts.html?user=${currentArticleData.author}&ref=news'>
 							<span style="color:${userData?.settings?.color}">
 								${profile.displayName || "Unknown"}
 							</span>
@@ -762,7 +734,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 				initArticles();
 			}        
 			dbListen("articles/" + currentSlug, (data) => {
-				document.getElementById("article-views").innerText = `${data?.views || 0} View(s)`;
+				document.getElementById("article-views").innerText = `${data?.views || 0} view(s)`;
 			});
 		})();
 	});
@@ -773,10 +745,10 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 				<hr>
 				<br>
 				<button class="button" id="edit-btn">
-					Edit Article
+					Edit article
 				</button>
 				<button class="button" id="reset-btn">
-					Reset Views
+					Reset views
 				</button>
 			`;
 			if (isOwner || isTester) {
@@ -800,7 +772,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 					editorHost.innerHTML = `
 						<hr>
 						<h3>
-							Edit Article
+							Edit article
 						</h3>
 						<label>
 							Title
@@ -824,7 +796,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 						<br>
 						<br>
 						<button class="button" id="save-btn">
-							Save Changes
+							Save changes
 						</button>
 						<button class="button" id="cancel-btn">
 							Cancel
@@ -839,7 +811,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 						const newDescription = document.getElementById("edit-description").value;
 						const newContent = document.getElementById("edit-content").value;
 						if (!newTitle || !newDescription || !newContent) {
-							showError("All Fields Are Required.");
+							showError("All fields are required.");
 							return;
 						}
 						await dbUpdate("articles/" + currentSlug, {
@@ -864,7 +836,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 			}
 			if (isOwner || isTester) {
 				document.getElementById("delete-btn")?.addEventListener("click", async () => {
-					if (!confirm("Delete This Article?")) return;
+					if (!confirm("Delete this article?")) return;
 					await fetchAPI("delete", {
 						path: pathToArray("articles/" + currentSlug)
 					});
@@ -876,7 +848,7 @@ if (x3tfypage === '/InfiniteUpdaters.html') {
 			if (resetArticleViews) {
 				resetArticleViews.addEventListener("click", async () => {
 					await dbUpdate("articles/" + currentSlug, { views: 0 });
-					showSuccess("Views Reset!");
+					showSuccess("Views reset!");
 				});
 			}
 		}

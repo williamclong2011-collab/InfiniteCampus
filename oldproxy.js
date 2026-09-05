@@ -14,7 +14,7 @@ const error = document.getElementById("sj-error");
 const stockSW = "./sw.js";
 const before = document.getElementById("before");
 const after = document.getElementById("after");
-const swAllowedHostnames = ["localhost", "127.0.0.1", "infinitecampus.xyz", "instructure.space", "www.infinitecampus.xyz"];
+const swAllowedHostnames = ["localhost", "127.0.0.1", window.location.origin];
 const errorCode = document.getElementById("sj-error-code");
 let scramjet = null;
 if (typeof $scramjetLoadController !== "undefined") {
@@ -105,7 +105,7 @@ form.addEventListener("submit", async (event) => {
     const frame = scramjet.createFrame();
     frame.frame.id = "sj-frame";
     const fullScreenBtn = document.createElement('button');
-    fullScreenBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
+    fullScreenBtn.innerHTML = '<i class="ic ic-fullscreen"></i>';
     fullScreenBtn.classList = 'button';
     fullScreenBtn.id = 'pxyFcrn';
     fullScreenBtn.style.position = 'fixed';

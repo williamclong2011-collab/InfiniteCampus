@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1">
-		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.css">
 		<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
 		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css">
 		<script async src="https://www.googletagmanager.com/gtag/js?id=G-7SV03ZXJ9R">
@@ -18,22 +18,24 @@
 			Infinite Campus
 		</title>
 		<link id="dynamic-favicon" rel="icon" type="image/png" href="/res/icon.png">
-        <link rel="stylesheet" href="global.css">
+        <link rel="stylesheet" href="./global.css">
         <meta name="keywords" content="Infinite campus,infinite campus,Infinite Campus,infinite Campus">
         <meta name="description" content="Infinite Campus Is A International Buisiness And Has Good Devs">
         <meta property="og:title" content="Infinite Campus">
         <meta property="og:description" content="Infinite Campus Is An International Buisiness And Has Good Devs">
-        <meta property="og:url" content="https://www.infinitecampus.xyz">
         <meta name="theme-color" content="#8cbe37">
-        <link rel="manifest" href="/manifest.json">
-        <meta content="/res/icon.png" property="og:image">
-		<script src="/scram/scramjet.all.js">
-		</script>
+        <link rel="manifest" href="./manifest.json">
+        <script src="/urls.js">
+        </script>
+        <script src="/scram/scramjet.all.js">
+        </script>
 		<script src="/baremux/index.js">
 		</script>
-		<script src="proxy.js" defer>
+        <script src="/baremux/worker.js">
+        </script>
+		<script src="/proxy.js" defer>
 		</script>
-		<script src="main.js">
+		<script src="/main.js">
         </script>
 	</head>
 	<body>
@@ -45,15 +47,15 @@
                     <div id="pxySearch">
                         <div id="nav-buttons">
                             <button title="Back" type="button" id="nav-back">
-                                <i class="bi bi-arrow-left">
+                                <i class="ic ic-arrow-left">
                                 </i>
                             </button>
                             <button title="Forward" type="button" id="nav-forward">
-                                <i class="bi bi-arrow-right">
+                                <i class="ic ic-arrow-right">
                                 </i>
                             </button>
                             <button title="Reload" type="button" id="nav-reload">
-                                <i class="bi bi-arrow-clockwise">
+                                <i class="ic ic-arrow-clockwise">
                                 </i>
                             </button>
                         </div>
@@ -61,11 +63,30 @@
                             <input id="sj-search-engine" value="https://www.google.com/search?q=%s" type="hidden"/>
                             <input id="sj-address" type="text" placeholder="Search Or Type Url Here">
                         </form>
-                        <div id="nav-buttons">
+                        <div id="nav-buttons" style="position:relative;">
+                            <button title="Currently Selected: Google" type="button" id="searchEngineTrigger">
+                                <i class="ic ic-search">
+                                </i>
+                            </button>
                             <a title="Use Old Proxy" href="InfiniteOldProxies.html">
-                                <i class="bi bi-archive">
+                                <i class="ic ic-archive">
                                 </i>
                             </a>
+                            <div class="mini-engine-popup" id="miniEnginePopup">
+                                <p class="search-section-title">
+                                    Search Engine
+                                </p>
+                                <div class="search-engine-grid" id="miniSearchEngineGrid">
+                                </div>
+                                <div class="field-group" id="miniCustomEngineGroup" style="display:none; margin-top:10px;">
+                                    <input class="button" type="text" id="miniCustomEngineInput" placeholder="https://example.com/search?q=%s" style="width:100%; box-sizing:border-box;">
+                                    <div class="row-actions">
+                                        <button id="miniSaveCustomEngineBtn" class="button">
+                                            Save
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -92,6 +113,15 @@
                         </div>
                         <div id="phrase">
                         </div>
+                        <center>
+                            <p class="btxt" style="text-align:center;">
+                                Join The Infinite Campus Discord At 
+                                <br>
+                                <a href="https://discord.infinitecampus.xyz" class="discord" style="width:auto;">
+                                    discord.infinitecampus.xyz
+                                </a>
+                            </p>
+                        </center>
                         <hr class="szo2" style="margin:0">
                         <div id="pxyApps">
                             <div data-url="https://chatgpt.com">
@@ -137,7 +167,7 @@
         </main>
 		<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js">
         </script>
-        <script src="frame.js">
+        <script src="./frame.js">
         </script>
 	</body>
 </html>

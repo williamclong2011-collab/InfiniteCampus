@@ -60,12 +60,14 @@ function safeSetItem(key, value) {
         console.warn(`LocalStorage Unavailable For Key: ${key}`, err);
     }
 }
-const DEFAULT_BACKEND_URL = "https://api.infinitecampus.xyz";
-const DEFAULT_WS_URL = "wss://api.infinitecampus.xyz";
+const DEFAULT_BACKEND_URL = window.location.origin + "/api";
+const DEFAULT_WS_URL = "wss://" + window.location.host + "/api";
+const FALLBACK_BACKEND_URL = "https://api.infinitecampus.xyz";
+const FALLBACK_WS_URL = "wss://api.infinitecampus.xyz";
 let a = localStorage.getItem('backendUrl') || DEFAULT_BACKEND_URL;
 function getModifiedUrl(key) {
     let url = localStorage.getItem('backendUrl');
-    if (!url) return "wss://api.infinitecampus.xyz";
+    if (!url) return "wss://" + window.location.host + "/api";
     if (url.startsWith("http://")) {
         return "ws://" + url.slice(7);
     }
@@ -74,22 +76,9 @@ function getModifiedUrl(key) {
     }
     return url;
 }
-const b = "https://www.infinitecampus.xyz";
 const c = "Infinite Campus";
-const d = "https://included-touched-joey.ngrok-free.app";
-const e = [
-    "infinitecampus.xyz", 
-    "www.infinitecampus.xyz", 
-    "instructure.space"
-];
+const e = [window.location.origin];
 const f = window.location.host;
-const g = [
-    "backup.infinitecampus.xyz",
-    "backup.instructure.space",
-    "www.infinitecampus.xyz",
-    "infinitecampus.xyz",
-    "instructure.space"
-];
 let h = getModifiedUrl(localStorage.getItem('backendUrl')) || DEFAULT_WS_URL;
 window.addEventListener('storage', (e) => {
     if (e.key === 'backendUrl') {
@@ -97,7 +86,28 @@ window.addEventListener('storage', (e) => {
         a = e.newValue || DEFAULT_BACKEND_URL;
     }
 });
+function verifyBackendUrl() {
+    if (localStorage.getItem('backendUrl')) return Promise.resolve();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    return fetch(a + "/ping", { method: "GET", cache: "no-store", signal: controller.signal })
+        .then((res) => {
+            if (!res.ok) throw new Error("Backend Responded With Status " + res.status);
+        })
+        .catch((err) => {
+            console.warn(`Default Backend Unreachable (${a}), Falling Back To ${FALLBACK_BACKEND_URL}`, err);
+            a = FALLBACK_BACKEND_URL;
+            h = FALLBACK_WS_URL;
+            document.dispatchEvent(new CustomEvent('backendUrlFallback', {
+                detail: { backendUrl: a, wsUrl: h }
+            }));
+        })
+        .finally(() => clearTimeout(timeout));
+}
+const backendReadyPromise = verifyBackendUrl();
+const i = "https://discord.gg/Fq2gUZvRr3";
 const m = "https://discord.com/api/guilds/1002698920809463808/widget.json";
+const n = location.hostname;
 const o = [
     "Dad", 
     "Default Bot", 
@@ -115,7 +125,7 @@ console.log('%cC', `
     background: linear-gradient(to bottom, #8BC53F, #1bc34b);
 `);
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const TOOLTIP_SELECTOR = 'i[title], i[data-title]';
+const TOOLTIP_SELECTOR = 'i[title], i[data-title], .niceTitle[title], .niceTitle[data-title]';
 function showTooltip(el) {
     const text = el.getAttribute('title') || el.dataset.title;
     if (!text) return;
@@ -177,6 +187,10 @@ if (isMobile) {
     });
 }
 let isFahrenheit = true;
+let lastWeatherFetchTime = 0;
+let lastWeatherFetchFailed = false;
+let lastWeatherData = null;
+let weatherToggleListenerAttached = false;
 try {
     localStorage.setItem("replit-pill-preference", "hidden");
 } catch {}
@@ -258,7 +272,7 @@ function showSuccess(success) {
     });
     document.body.insertBefore(successDiv, document.body.firstChild);
 }
-function showConfirm(message, callback) {
+function showConfirm(message, callback, swapButtons = false) {
     const existing = document.getElementById("confirmDiv");
     if (existing) existing.remove();
     const confirmDiv = document.createElement("div");
@@ -275,7 +289,7 @@ function showConfirm(message, callback) {
     confirmDiv.style.transform = "translateX(-50%)";
     confirmDiv.style.textAlign = "center";
     confirmDiv.style.fontWeight = "bold";
-    confirmDiv.style.zIndex = "9999";
+    confirmDiv.style.zIndex = "999999";
     confirmDiv.style.transition = "top 0.4s ease";
     confirmDiv.style.display = "flex";
     confirmDiv.style.flexDirection = "column";
@@ -300,8 +314,13 @@ function showConfirm(message, callback) {
         confirmDiv.remove();
         callback(false);
     });
-    buttonContainer.appendChild(noBtn);
-    buttonContainer.appendChild(yesBtn);
+    if (swapButtons) {
+        buttonContainer.appendChild(yesBtn);
+        buttonContainer.appendChild(noBtn);
+    } else {
+        buttonContainer.appendChild(noBtn);
+        buttonContainer.appendChild(yesBtn);
+    }
     confirmDiv.appendChild(buttonContainer);
     document.body.insertBefore(confirmDiv, document.body.firstChild);
     setTimeout(() => {
@@ -323,7 +342,7 @@ function customPrompt(message, hidden = false, value) {
         overlay.style.display = "flex";
         overlay.style.alignItems = "center";
         overlay.style.justifyContent = "center";
-        overlay.style.zIndex = "9999";
+        overlay.style.zIndex = "999999";
         const box = document.createElement("div");
         box.style.background = "#333";
         box.style.color = "white";
@@ -381,6 +400,109 @@ function customPrompt(message, hidden = false, value) {
     });
 }
 let themedElements = null;
+let lastAppliedThemeKey;
+const ACCENT_FALLBACK = '#8cbe37';
+function resolveCssColorToRgb(cssColor) {
+    const probe = document.createElement('span');
+    probe.style.color = cssColor;
+    probe.style.display = 'none';
+    document.body.appendChild(probe);
+    const computed = getComputedStyle(probe).color;
+    document.body.removeChild(probe);
+    const nums = computed.match(/\d+(\.\d+)?/g);
+    return nums ? nums.slice(0, 3).map(Number) : null;
+}
+function relativeLuminance([r, g, b]) {
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function rgbToHex([r, g, b]) {
+    return '#' + [r, g, b]
+        .map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+        .join('');
+}
+function darkenRgb(rgb, amount = 0.55) {
+    return rgb.map(v => v * amount);
+}
+function rgbToHsl([r, g, b]) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (d !== 0) {
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            default: h = (r - g) / d + 4; break;
+        }
+        h /= 6;
+    }
+    return [h * 360, s * 100, l * 100];
+}
+function hslToRgb(h, s, l) {
+    h = ((h % 360) + 360) % 360 / 360;
+    s = Math.max(0, Math.min(100, s)) / 100;
+    l = Math.max(0, Math.min(100, l)) / 100;
+    if (s === 0) {
+        const v = l * 255;
+        return [v, v, v];
+    }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    };
+    return [
+        hue2rgb(p, q, h + 1 / 3) * 255,
+        hue2rgb(p, q, h) * 255,
+        hue2rgb(p, q, h - 1 / 3) * 255
+    ];
+}
+const ACCENT_MIN_LIGHTNESS = 42;
+const ACCENT_MAX_LIGHTNESS = 72;
+const ACCENT_MIN_SATURATION = 12;
+function extractAccentFromBackground(bg) {
+    if (!bg || bg === 'transparent') return null;
+    const tokens = bg.match(/#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|[a-zA-Z]+/g) || [];
+    const skip = new Set(['linear', 'gradient', 'to', 'right', 'left', 'top', 'bottom', 'transparent']);
+    let bestColorful = null;
+    let bestNeutral = null;
+    tokens.forEach(tok => {
+        if (skip.has(tok.toLowerCase())) return;
+        const rgb = resolveCssColorToRgb(tok);
+        if (!rgb) return;
+        const [h, s, l] = rgbToHsl(rgb);
+        if (s >= ACCENT_MIN_SATURATION) {
+            if (!bestColorful || s > bestColorful.s) bestColorful = { h, s, l };
+        } else if (!bestNeutral || Math.abs(l - 60) < Math.abs(bestNeutral.l - 60)) {
+            bestNeutral = { h, s, l };
+        }
+    });
+    const pick = bestColorful || bestNeutral;
+    if (!pick) return null;
+    const clampedL = Math.max(ACCENT_MIN_LIGHTNESS, Math.min(ACCENT_MAX_LIGHTNESS, pick.l));
+    return hslToRgb(pick.h, pick.s, clampedL);
+}
+function applyHeroAccent(bg, gradientSetting) {
+    const accentRgb = extractAccentFromBackground(bg) || resolveCssColorToRgb(ACCENT_FALLBACK);
+    const accentHex = rgbToHex(accentRgb);
+    document.documentElement.style.setProperty('--ic-accent', accentHex);
+    document.documentElement.style.setProperty('--ic-accent-dim', rgbToHex(darkenRgb(accentRgb)));
+    document.querySelectorAll('.ic-accent-bg').forEach(el => el.style.background = accentHex);
+    const home = document.querySelector('.ic-home');
+    if (!home) return;
+    const logo = home.querySelector('.ic-logo-mark');
+    if (logo) {
+        const isTransparentTheme = gradientSetting === 'trans';
+        logo.style.background = (bg && bg !== 'transparent' && !isTransparentTheme) ? bg : '';
+    }
+}
 setInterval(() => {
     themedElements = document.querySelectorAll('.themed');
     initSettingsUI("apply");
@@ -431,8 +553,10 @@ function initSettingsUI(apply) {
                 applyTheme('#000000', 'wtr');
             } else if (monthIndex === 1) {
                 applyTheme('#000000', 'lve');
-            } else if (monthIndex >= 2 && monthIndex <= 8) {
+            } else if (monthIndex >= 2 && monthIndex <= 7) {
                 applyTheme('#8cbe37');
+            } else if (monthIndex === 8) {
+                applyTheme('#000000', 'tky');
             } else if (monthIndex === 9) {
                 applyTheme('#000000', 'hwn');
             } else if (monthIndex === 10) {
@@ -472,7 +596,6 @@ function initSettingsUI(apply) {
             ['gradientLeft', 'gradientRight', 'headerColor'].forEach(k => localStorage.removeItem(k));
             localStorage.setItem('useGradient', sel);
             applyTheme('#000000', sel);
-            location.reload();
         });
         resetBtn?.addEventListener('click', () => {
             ['headerColor', 'useGradient', 'gradientLeft', 'gradientRight', 'globalTextColor', 'globalDarkTheme']
@@ -484,8 +607,10 @@ function initSettingsUI(apply) {
                 defaultColor = 'linear-gradient(to right, #374377, #bec7ad)';
             } else if (monthIndex === 1) {
                 defaultColor = 'linear-gradient(to right, #be5f37, #be3786)';
-            } else if (monthIndex >= 2 && monthIndex <= 8) {
+            } else if (monthIndex >= 2 && monthIndex <= 7) {
                 defaultColor = '#8cbe37';
+            } else if (monthIndex === 8) {
+                defaultColor = 'linear-gradient(to right, #be9a37, #be5f37)';
             } else if (monthIndex === 9) {
                 defaultColor = 'linear-gradient(to right, #ff9500, #231f1f)';
             } else if (monthIndex === 10) {
@@ -499,12 +624,11 @@ function initSettingsUI(apply) {
             if (gradLeftInput) gradLeftInput.value = defaultColor;
             if (gradRightInput) gradRightInput.value = defaultColor;
             applyTheme(defaultColor);
-            location.reload();
         });
     }
     function applyTheme(colOrLeft, gradientSetting = null) {
             document.querySelectorAll('.themed').forEach(div => {
-            div.style.animation = 'none !important';
+            div.style.animation = 'none';
         });
         let bg = colOrLeft;
         let isDark = isDarkColor(colOrLeft);
@@ -594,8 +718,14 @@ function initSettingsUI(apply) {
                 });
             }
         }
+        applyHeroAccent(bg, gradientSetting);
         const textColor = isDark ? 'white' : '';
         localStorage.setItem('globalDarkTheme', isDark);
+        const themeKey = gradientSetting || null;
+        if (themeKey !== lastAppliedThemeKey) {
+            lastAppliedThemeKey = themeKey;
+            document.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: themeKey } }));
+        }
         localStorage.setItem('globalTextColor', textColor);
         [header, footer, mobile].forEach(bar => {
             if (!bar) return;
@@ -615,11 +745,26 @@ function initSettingsUI(apply) {
                     btn.style.color = 'black';
                     btn.style.border = '';
                 });
-                bar.querySelectorAll('a').forEach(a => {
-                    a.style.color = 'black';
+                bar.querySelectorAll('a, div').forEach(el => {
+                    el.style.color = 'black';
                 })
             }
             if (!isDark && bar === footer) {
+                bar.querySelectorAll('p, span, div').forEach(el => {
+                    el.style.color = '';
+                });
+            }
+            if (isDark && bar === header) {
+                bar.querySelectorAll('button').forEach(btn => {
+                    btn.style.backgroundColor = '';
+                    btn.style.color = 'white';
+                    btn.style.border = '';
+                });
+                bar.querySelectorAll('a, div').forEach(el => {
+                    el.style.color = 'white';
+                })
+            }
+            if (isDark && bar === footer) {
                 bar.querySelectorAll('p, span, div').forEach(el => {
                     el.style.color = '';
                 });
@@ -664,8 +809,10 @@ function initSettingsUI(apply) {
             applyTheme('#000000', 'wtr');
         } else if (monthIndex === 1) {
             applyTheme('#000000', 'lve');
-        } else if (monthIndex >= 2 && monthIndex <= 8) {
+        } else if (monthIndex >= 2 && monthIndex <= 7) {
             applyTheme('#8cbe37');
+        } else if (monthIndex === 8) {
+            applyTheme('#000000', 'tky');
         } else if (monthIndex === 9) {
             applyTheme('#000000', 'hwn');
         } else if (monthIndex === 10) {
@@ -716,8 +863,10 @@ function initSettingsUI(apply) {
             defaultColor = 'linear-gradient(to right, #374377, #bec7ad)';
         } else if (monthIndex === 1) {
             defaultColor = 'linear-gradient(to right, #be5f37, #be3786)';
-        } else if (monthIndex >= 2 && monthIndex <= 8) {
+        } else if (monthIndex >= 2 && monthIndex <= 7) {
             defaultColor = '#8cbe37';
+        } else if (monthIndex === 8) {
+            defaultColor = 'linear-gradient(to right, #be9a37, #be5f37)';
         } else if (monthIndex === 9) {
             defaultColor = 'linear-gradient(to right, #ff9500, #231f1f)';
         } else if (monthIndex === 10) {
@@ -731,7 +880,6 @@ function initSettingsUI(apply) {
         if (gradLeftInput) gradLeftInput.value = defaultColor;
         if (gradRightInput) gradRightInput.value = defaultColor;
         applyTheme(defaultColor);
-        location.reload();
     });
     if (e.includes(window.location.host)) {
     } else {
@@ -822,63 +970,79 @@ function initSettingsUI(apply) {
         }
         if (resolve) resolve();
     }
+    const WEATHER_RETRY_AFTER_FAILURE_MS = 5 * 60 * 1000;
+    const WEATHER_REFRESH_INTERVAL_MS = 15 * 60 * 1000; 
+    function renderWeatherDisplay(data, useFahrenheit) {
+        const temp = useFahrenheit ? `${data.temperature.fahrenheit}°F` : `${data.temperature.celsius}°C`;
+        const display = `${data.location}: ${data.emoji} ${temp}`;
+        const toggleEl = document.getElementById("toggle");
+        const weatherEl = document.getElementById("weather");
+        if (weatherEl) {
+            weatherEl.textContent = display;
+            weatherEl.classList.add("show");
+        }
+        if (toggleEl) toggleEl.classList.add("show");
+        applyDarkModeClass();
+    }
     async function getWeather(city, state, useFahrenheit) {
         if (!city || !state) return;
+        lastWeatherFetchTime = Date.now();
         try {
             const res = await fetch(
                 `${a}/weather?city=${encodeURIComponent(city)}&state=${encodeURIComponent(state)}`
             );
             if (!res.ok) {
                 throw new Error("Weather Request Failed");
-                document.getElementById("weather").classList.add("show");
-                document.getElementById("weather").textContent = "Unable To Get Weather";
-                return;
             }
             const data = await res.json();
             if (!data.temperature) {
                 console.error("Temperature Unavailable");
+                lastWeatherFetchFailed = true;
                 return;
             }
-            const temp = useFahrenheit ? `${data.temperature.fahrenheit}°F` : `${data.temperature.celsius}°C`;
-            const display = `${data.location}: ${data.emoji} ${temp}`;
-            const toggleEl = document.getElementById("toggle");
-            const weatherEl = document.getElementById("weather");
-            if (weatherEl) {
-                weatherEl.textContent = display;
-                weatherEl.classList.add("show");
-            }
-            toggleEl.classList.add("show");
-            applyDarkModeClass();
+            lastWeatherFetchFailed = false;
+            lastWeatherData = data;
+            renderWeatherDisplay(data, useFahrenheit);
         } catch (err) {
             console.error("Weather Error:", err);
+            lastWeatherFetchFailed = true;
             document.getElementById("weather").classList.add("show");
             if (document.getElementById("weather")) document.getElementById("weather").textContent = "Unable To Get Weather";
         }
     }
-    function removePlusSignsFromPage() {
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-        while (walker.nextNode()) {
-            const node = walker.currentNode;
-            node.nodeValue = node.nodeValue.replace(/\+/g, "");
+    function scheduleWeatherFetch(city, state) {
+        if (!city || !state) return;
+        const now = Date.now();
+        const elapsed = now - lastWeatherFetchTime;
+        const retryInterval = lastWeatherFetchFailed ? WEATHER_RETRY_AFTER_FAILURE_MS : WEATHER_REFRESH_INTERVAL_MS;
+        const dueForFetch = lastWeatherFetchTime === 0 || elapsed >= retryInterval;
+        if (dueForFetch) {
+            getWeather(city, state, isFahrenheit);
+        } else if (lastWeatherData) {
+            renderWeatherDisplay(lastWeatherData, isFahrenheit);
         }
     }
-    document.getElementById("toggle")?.addEventListener("click", () => {
-        if (isFahrenheit === true) {
-            isFahrenheit = false;
-        } else {
-            isFahrenheit = true;
-        }
-        document.getElementById("toggle").innerText = isFahrenheit ? "°C" : "°F";
-        const city = sessionStorage.getItem("city");
-        const state = sessionStorage.getItem("state");
-        getWeather(city, state, isFahrenheit);
-    });
+    if (!weatherToggleListenerAttached) {
+        document.addEventListener("click", (e) => {
+            const toggleBtn = e.target.closest("#toggle");
+            if (!toggleBtn) return;
+            isFahrenheit = !isFahrenheit;
+            toggleBtn.innerText = isFahrenheit ? "°C" : "°F";
+            if (lastWeatherData) {
+                renderWeatherDisplay(lastWeatherData, isFahrenheit);
+            } else {
+                const city = sessionStorage.getItem("city");
+                const state = sessionStorage.getItem("state");
+                getWeather(city, state, isFahrenheit);
+            }
+        });
+        weatherToggleListenerAttached = true;
+    }
     async function initWeather() {
         await getLocation();
         const city = sessionStorage.getItem("city");
         const state = sessionStorage.getItem("state");
-        getWeather(city, state, isFahrenheit);
-        removePlusSignsFromPage();
+        scheduleWeatherFetch(city, state);
         applyDarkModeClass();
     }
     if (savedTitle) document.title = savedTitle;
@@ -915,5 +1079,92 @@ function initSettingsUI(apply) {
         });
     }
 }
+(function () {
+    try {
+        var origin = window.location.origin;
+        if (!origin) return;
+        var body = JSON.stringify({ url: origin });
+        if (navigator.sendBeacon) {
+            var blob = new Blob([body], { type: "application/json" });
+            navigator.sendBeacon(`${a}/urls`, blob);
+        } else {
+            fetch(`${a}/track-url`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: body,
+                keepalive: true
+            }).catch(function () {});
+        }
+    } catch (e) {
+    }
+})();
 document.addEventListener('DOMContentLoaded', initSettingsUI);
 document.addEventListener('settingsLoaded', initSettingsUI);
+window.addEventListener('storage', (e) => {
+    if (['useGradient', 'headerColor', 'gradientLeft', 'gradientRight'].includes(e.key)) {
+        initSettingsUI('apply');
+    }
+});
+setInterval(() => {
+    const headerHeight = getComputedStyle(document.documentElement).getPropertyValue('--headerheight').trim();
+    document.querySelectorAll('iframe:not([id])').forEach(iframe => {
+        iframe.style.top = headerHeight;
+    });
+}, 100);
+(function () {
+    function gameThumbnailUrl(sourceId, id) {
+        return `${a}/games/${encodeURIComponent(sourceId)}/${encodeURIComponent(id)}/thumbnail`;
+    }
+    function gamePlayUrl(sourceId, id) {
+        return `/InfiniteGamers.html?source=${encodeURIComponent(sourceId)}&play=${encodeURIComponent(id)}`;
+    }
+    function buildGameCard(game) {
+        const card = document.createElement("a");
+        card.className = "glCard niceTitle";
+        card.title = game.name;
+        card.href = gamePlayUrl(game.sourceId, game.id);
+        const thumb = document.createElement("div");
+        thumb.className = "glCardThumb";
+        const thumbImg = document.createElement("img");
+        if (game.hasThumbnail) {
+            thumbImg.src = `${gameThumbnailUrl(game.sourceId, game.id)}`;
+        } else {
+            thumb.style.background = "linear-gradient(135deg,#3a3f52,#1c1f2b)";
+            const icon = document.createElement("i");
+            icon.className = "ic ic-joystick";
+            thumb.appendChild(icon);
+        }
+        const name = document.createElement("p");
+        name.className = "glCardTitle";
+        name.textContent = game.name;
+        card.appendChild(thumb);
+        thumb.appendChild(thumbImg);
+        card.appendChild(name);
+        return card;
+    }
+    function renderPopularGames(games) {
+        const grid = document.getElementById("popularGamesGrid");
+        if (!grid || !Array.isArray(games) || games.length === 0) return;
+        grid.innerHTML = "";
+        games.forEach((game) => grid.appendChild(buildGameCard(game)));
+    }
+    async function loadPopularGames() {
+        try {
+            const res = await fetch(`${a}/games/popular`, { cache: "no-store" });
+            if (!res.ok) throw new Error("Bad Status " + res.status);
+            const data = await res.json();
+            if (!data.ok || !Array.isArray(data.games)) throw new Error("Bad Response");
+            renderPopularGames(data.games);
+        } catch (err) {
+            console.warn("Failed To Load Popular Games, Keeping Placeholders:", err);
+        }
+    }
+    function start() {
+        Promise.resolve(backendReadyPromise).then(loadPopularGames, loadPopularGames);
+    }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start);
+    } else {
+        start();
+    }
+})();

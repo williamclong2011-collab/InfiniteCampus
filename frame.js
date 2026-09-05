@@ -54,12 +54,12 @@ const headerHTML = `
         </div>
         <div id="header-center">
             <a href="index.html">
-                <img src="/res/logo.svg" id="logo">
+                <img src="/res/logo.png" id="logo">
             </a>
         </div>
         <div id="header-right">
             <button id="mobileMenuBtn" class="mobile-menu-btn">
-                <i class="bi bi-list">
+                <i class="ic ic-list">
                 </i>
             </button>
             <div id="desktopNav">
@@ -123,19 +123,9 @@ const headerHTML = `
                         </a>
                     </div>
                 </div>
-                <div class="dropdown-wrap">
-                    <button id="downloadToggle" class="dropdown-toggle">
-                        Downloads
-                    </button>
-                    <div class="dropdown themed" id="downloadDropdown">
-                        <a href='InfiniteApps.html?website=true'>
-                            Download This Website
-                        </a>
-                        <a href='InfiniteApps.html?games=true'>
-                            Download Games
-                        </a>
-                    </div>
-                </div>
+                <a href='InfiniteApps.html?website=true'>
+                    Download
+                </a>
                 <a class="contactme" href="InfiniteContacts.html">
                     Contact Me
                 </a>
@@ -145,13 +135,15 @@ const headerHTML = `
         </div>
     </header>
     <div id="mobileSidePanel" class="themed">
-        <a id="lgbtn" href="index.html">
-            <img src="/res/logo.svg" id="logo" style="width:fit-content; margin-bottom:-60px; display:block;">
-        </a>
-        <button id="closeMobilePanel" class="darkbuttons">
-            <i class="bi bi-x-lg">
-            </i>
-        </button>
+        <div id="mobileSidePanelHeader">
+            <a id="lgbtn" href="index.html">
+                <img src="/res/logo.png" id="sidebarLogo">
+            </a>
+            <button id="closeMobilePanel" class="darkbuttons">
+                <i class="ic ic-x-lg">
+                </i>
+            </button>
+        </div>
         <a href="InfiniteAbouts.html" class="darkbuttons">
             About
         </a>
@@ -186,10 +178,7 @@ const headerHTML = `
             Future Updates
         </a>
         <a href="InfiniteApps.html?website=true" class="darkbuttons">
-            Download This Website
-        </a>
-        <a href="InfiniteApps.html?games=true" class="darkbuttons">
-            Download Games
+            Download
         </a>
         <a href="InfiniteContacts.html" class="darkbuttons">
             Contact Me
@@ -220,6 +209,49 @@ document.addEventListener("DOMContentLoaded", () => {
         if (width < 500) return 8;
         if (width < 800) return 15;
         return 40;
+    }
+    function applyDiscordLink() {
+        let discordLink = document.getElementById("discordLink");
+        let discordBtn = document.getElementById("discordBtn");
+        if (discordLink) {
+            discordLink.innerText = i;
+        }
+        if (discordBtn) {
+            discordBtn.href = i;
+        }
+        let hostlink = document.getElementById("hostname");
+        if (hostlink) {
+            hostlink.innerText = window.location.origin;
+        }
+    }
+    applyDiscordLink();
+    const THEME_PARTICLES = {
+        wtr: { iconClass: "ic ic-snow", colors: ["white", "#e0f7ff", "#cfe8ff"], label: "Toggle Snow" },
+        cms: { iconClass: "ic ic-snow", colors: ["white", "#e0f7ff", "#cfe8ff"], label: "Toggle Snow" },
+        lve: { iconClass: "ic ic-heart-fill", colors: ["red", "#ff4d6d", "#ff8fa3"], label: "Toggle Hearts" },
+        hwn: { iconClass: "ic ic-pumpkin", colors: ["orange", "#ff7518", "#cc5500"], label: "Toggle Pumpkins" },
+        tky: { iconClass: "ic ic-leaf-fill", colors: ["yellow", "#d4a017", "#b7410e"], label: "Toggle Leaves" }
+    };
+    function getMonthFallbackThemeKey() {
+        const monthIndex = new Date().getMonth();
+        if (monthIndex === 0) return "wtr";
+        if (monthIndex === 1) return "lve";
+        if (monthIndex === 8) return "tky";
+        if (monthIndex === 9) return "hwn";
+        if (monthIndex === 10) return "tky";
+        if (monthIndex === 11) return "cms";
+        return null;
+    }
+    function getActiveThemeKey() {
+        const storedTheme = localStorage.getItem("useGradient");
+        if (storedTheme) {
+            return THEME_PARTICLES[storedTheme] ? storedTheme : null;
+        }
+        return getMonthFallbackThemeKey();
+    }
+    function getActiveParticleConfig() {
+        const key = getActiveThemeKey();
+        return key ? THEME_PARTICLES[key] : null;
     }
     function createSnowflakes() {
         snowContainer.innerHTML = "";
@@ -255,7 +287,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     adjustSnowflakeCount();
     window.addEventListener("resize", adjustSnowflakeCount);
-    let containerWidth = snowContainer.clientWidth;
+    function getContainerWidth() {
+        const header = document.getElementById("site-header");
+        const width = header ? header.clientWidth : snowContainer.clientWidth;
+        return width || snowContainer.clientWidth || window.innerWidth;
+    }
+    let containerWidth = getContainerWidth();
     function updateSnowflakePositions() {
         const spacing = containerWidth / snowflakes.length;
         snowflakes.forEach((flake, index) => {
@@ -265,6 +302,8 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSnowflakePositions();
     function startSnow() {
         snowContainer.style.display = "block";
+        containerWidth = getContainerWidth();
+        updateSnowflakePositions();
         snowflakes.forEach(flake => flake.start && flake.start());
     }
     function stopSnow() {
@@ -299,19 +338,17 @@ document.addEventListener("DOMContentLoaded", () => {
             subtree: true
         });
     }
-    waitForToggleSnowBtn((toggleBtn) => {
-        const monthIndex = new Date().getMonth();
-        if (monthIndex === 11 || monthIndex === 0) {
-            toggleBtn.textContent = "Toggle Snow";
-        } else if (monthIndex === 1) {
-            toggleBtn.textContent = 'Toggle Hearts';
-        } else if (monthIndex >= 2 && monthIndex <= 8) {
+    function updateToggleButton(toggleBtn) {
+        const config = getActiveParticleConfig();
+        if (!config) {
             toggleBtn.style.display = 'none';
-        } else if (monthIndex === 9) {
-            toggleBtn.textContent = 'Toggle Pumpkins';
-        } else if (monthIndex === 10) {
-            toggleBtn.textContent = 'Toggle Leaves';
+        } else {
+            toggleBtn.style.display = '';
+            toggleBtn.textContent = config.label;
         }
+    }
+    waitForToggleSnowBtn((toggleBtn) => {
+        updateToggleButton(toggleBtn);
         toggleBtn.addEventListener("click", () => {
             snowEnabled = !snowEnabled;
             localStorage.setItem("snowEnabled", snowEnabled.toString());
@@ -319,32 +356,16 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
     function initSnowflakeAnimations() {
-        const monthIndex = new Date().getMonth();
+        const config = getActiveParticleConfig();
         snowflakes.forEach((flake) => {
             flake.style.display = "";
-            let iconClass = "";
-            let iconColor = "";
-            if (monthIndex === 11 || monthIndex === 0) {
-                iconClass = "bi bi-snow";
-                iconColor = "white";
-            } 
-            else if (monthIndex === 1) {
-                iconClass = "bi bi-suit-heart-fill";
-                iconColor = "red";
-            } 
-            else if (monthIndex >= 2 && monthIndex <= 8) {
+            if (!config) {
                 flake.style.display = "none";
                 return;
-            } 
-            else if (monthIndex === 9) {
-                iconClass = "fa-solid fa-pumpkin";
-                iconColor = "orange";
-            } 
-            else if (monthIndex === 10) {
-                iconClass = "bi bi-leaf-fill";
-                iconColor = "darkgoldenrod";
             }
-            flake.innerHTML = `<i class="${iconClass}" style="color:${iconColor}"></i>`;
+            const flakeColor = config.colors[Math.floor(Math.random() * config.colors.length)];
+            flake.innerHTML = `<i class="${config.iconClass}" style="color:${flakeColor}"></i>`;
+            if (flake.stop) flake.stop();
             let y = Math.random() * 60;
             let swayOffset = Math.random() * Math.PI * 2;
             let running = false;
@@ -379,7 +400,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     initSnowflakeAnimations();
     window.addEventListener("resize", () => {
-        containerWidth = snowContainer.clientWidth;
+        containerWidth = getContainerWidth();
         snowflakes = createSnowflakes();
         updateSnowflakePositions();
         initSnowflakeAnimations();
@@ -387,46 +408,61 @@ document.addEventListener("DOMContentLoaded", () => {
             snowflakes.forEach(flake => flake.start && flake.start());
         }
     });
-    const downloadToggle = document.getElementById('downloadToggle');
-    const downloadDropdown = document.getElementById('downloadDropdown');
+    let lastThemeKey = getActiveThemeKey();
+    function refreshParticleTheme() {
+        const newKey = getActiveThemeKey();
+        if (newKey === lastThemeKey) return;
+        lastThemeKey = newKey;
+        initSnowflakeAnimations();
+        if (snowEnabled) {
+            snowflakes.forEach(flake => flake.start && flake.start());
+        }
+        const btn = document.getElementById("toggleSnowBtn");
+        if (btn) updateToggleButton(btn);
+    }
+    document.addEventListener("themeChanged", refreshParticleTheme);
+    window.addEventListener("storage", (e) => {
+        if (e.key === "useGradient") refreshParticleTheme();
+    });
+    let pausedForVisibility = false;
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            if (snowEnabled) {
+                snowflakes.forEach(flake => flake.stop && flake.stop());
+                pausedForVisibility = true;
+            }
+        } else if (pausedForVisibility) {
+            pausedForVisibility = false;
+            if (snowEnabled) {
+                snowflakes.forEach(flake => flake.start && flake.start());
+            }
+        }
+    });
     const helpToggle = document.getElementById('helpToggle');
     const helpDropdown = document.getElementById('helpDropdown');
     const abtToggle = document.getElementById('abtToggle');
     const abtDropdown = document.getElementById('abtDropdown');
     const updateToggle = document.getElementById('updateToggle');
     const updateDropdown = document.getElementById('updateDropdown');
-    downloadToggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        downloadDropdown.style.display = downloadDropdown.style.display === 'flex' ? 'none' : 'flex';
-        updateDropdown.style.display = 'none';
-        helpDropdown.style.display = 'none';
-        abtDropdown.style.display = 'none';
-    });
     helpToggle.addEventListener('click', (e) => {
         e.stopPropagation();
         helpDropdown.style.display = helpDropdown.style.display === 'flex' ? 'none' : 'flex';
         updateDropdown.style.display = 'none';
-        downloadDropdown.style.display = 'none';
         abtDropdown.style.display = 'none';
     });
     abtToggle.addEventListener('click', (e) => {
         e.stopPropagation();
         abtDropdown.style.display = abtDropdown.style.display === 'flex' ? 'none' : 'flex';
         updateDropdown.style.display = 'none';
-        downloadDropdown.style.display = 'none';
         helpDropdown.style.display = 'none';
     });
     updateToggle.addEventListener('click', (e) => {
         e.stopPropagation();
         updateDropdown.style.display = updateDropdown.style.display === 'flex' ? 'none' : 'flex';
         abtDropdown.style.display = 'none';
-        downloadDropdown.style.display = 'none';
         helpDropdown.style.display = 'none';
     });
     document.addEventListener('click', (e) => {
-        if (!downloadDropdown.contains(e.target) && !downloadToggle.contains(e.target)) {
-            downloadDropdown.style.display = 'none';
-        }
         if (!helpDropdown.contains(e.target) && !helpToggle.contains(e.target)) {
             helpDropdown.style.display = 'none';
         }
@@ -482,20 +518,27 @@ function appendToMain() {
         "/InfiniteBrowsers.html",
         "/InfiniteDonaters.html",
         "/InfiniteProxies.html",
-        "InfiniteOldProxies.html",
-        "InfiniteAccounts.html",
-        "InfiniteAdmins.html",
-        "InfiniteArchives.html",
-        "InfinitePolicies.html",
-        "InfiniteTerms.html",
-        "InfiniteAis.html"
+        "/InfiniteOldProxies.html",
+        "/InfiniteAccounts.html",
+        "/InfiniteAdmins.html",
+        "/InfiniteArchives.html",
+        "/InfinitePolicies.html",
+        "/InfiniteTerms.html",
+        "/InfiniteAis.html",
+        "/InfiniteApps.html?listen=true",
+        "/InfiniteApps.html?player=true",
+        "/InfiniteLegacyGames.html"
     ];
-    const currentPage = window.location.pathname;
+    const currentPage = window.location.pathname + window.location.search;
     if (excludedPages.some(page => currentPage.includes(page))) {
         return;
     }
     const main = document.querySelector("main");
     if (!main) return;
+    const homeTarget = Array.from(main.children).find(
+        (el) => el.classList && el.classList.contains("ic-home") && el.style.display !== "none"
+    );
+    const insertTarget = homeTarget || main;
     const extraHTML = `
         <br>
         <br>
@@ -513,17 +556,17 @@ function appendToMain() {
                 All New Updates Are On The Updates Page
                 <br>
                 Also Join The
-                <a href="https://discord.gg/4d9hJSVXca" class="discord" target="_blank">
+                <a href="${i}" class="discord" target="_blank">
                     Discord
                 </a>
-                discord.gg/4d9hJSVXca
+                ${i}
             </p>
             <br>
             <br>
             <br>
         </center>
     `;
-    main.insertAdjacentHTML("beforeend", extraHTML);
+    insertTarget.insertAdjacentHTML("beforeend", extraHTML);
 }
 const isChattersPage = window.location.pathname
     .toLowerCase()
@@ -532,6 +575,8 @@ if (!isChattersPage) {
     const LOADER_CONFIG = {
         mode: "auto",
     };
+    let loadingScreensDisabled = false;
+    loadingScreensDisabled = localStorage.getItem("loadingScreensDisabled") === "true";
     const loader = document.createElement("div");
     loader.id = "planet-loader";
     loader.innerHTML = `
@@ -545,13 +590,56 @@ if (!isChattersPage) {
             <div id="loader-maint-message" style="margin-bottom:15px; font-size:18px; text-align:center;"></div>
             <a href="https://status.infinitecampus.xyz" id="loader-maint-btn" class="discord">Check Statuses</a>
         </div>
+        <div id="loader-slow-msg">
+            <div id="loader-slow-second-msg">Taking Longer Than Usual<br><small>The Site May Be Under Heavy Load.</small></div>
+            <a href="https://status.infinitecampus.xyz" class="discord" style="font-size:13px; margin-top:8px;">Check Statuses</a>
+            <div id="loader-disable-row">
+                <span id="loader-disable-label">Disable Loading Screens</span>
+                <label class="switch" id="loader-disable-switch">
+                    <input type="checkbox" id="loader-disable-checkbox" ${loadingScreensDisabled ? "checked" : ""}>
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
     `;
-    document.body.prepend(loader);
+    if (!loadingScreensDisabled) {
+        document.body.prepend(loader);
+    }
     const maintContent = loader.querySelector("#loader-maint-content");
     const maintMessage = loader.querySelector("#loader-maint-message");
     const maintBtn = loader.querySelector("#loader-maint-btn");
+    const slowMsg = loader.querySelector("#loader-slow-msg");
+    const disableCheckbox = loader.querySelector("#loader-disable-checkbox");
+    disableCheckbox.addEventListener("change", () => {
+        loadingScreensDisabled = disableCheckbox.checked;
+        localStorage.setItem("loadingScreensDisabled", loadingScreensDisabled.toString());
+        if (loadingScreensDisabled) {
+            hideLoader();
+            hidePxyLoader();
+        }
+    });
     let isLoaded = false;
+    let slowTimer = null;
+    function showSlowMsg() {
+        slowMsg.classList.add("visible");
+    }
+    function hideSlowMsg() {
+        slowMsg.classList.remove("visible");
+    }
+    function startSlowTimer() {
+        clearTimeout(slowTimer);
+        slowTimer = setTimeout(() => {
+            if (!isLoaded) {
+                showSlowMsg();
+            }
+        }, 5000);
+    }
+    function cancelSlowTimer() {
+        clearTimeout(slowTimer);
+        hideSlowMsg();
+    }
     function showLoader() {
+        if (loadingScreensDisabled) return;
         loader.style.display = "flex";
         loader.style.flexDirection = "column";
         loader.style.opacity = "1";
@@ -559,6 +647,7 @@ if (!isChattersPage) {
         loader.style.top = "60px";
     }
     function hideLoader() {
+        cancelSlowTimer();
         loader.style.opacity = "0";
         loader.style.top = "60px";
         setTimeout(() => {
@@ -566,14 +655,17 @@ if (!isChattersPage) {
         }, 600);
     }
     function showPxyLoader() {
+        if (loadingScreensDisabled) return;
         if (!document.getElementById("planet-loader")) {
             document.body.prepend(loader);
         }
         loader.style.display = "flex";
         loader.style.top = "134.8px";
         loader.style.opacity = "1";
+        startSlowTimer();
     }
     function hidePxyLoader() {
+        cancelSlowTimer();
         loader.style.opacity = "0";
         loader.style.top = '60px';
         setTimeout(() => {
@@ -583,7 +675,7 @@ if (!isChattersPage) {
     let bypassLoader = false;
     function applyLoaderMode(mode, message = "") {
         LOADER_CONFIG.mode = mode || "auto";
-        if (bypassLoader && (mode === "maint" || mode === "infinite" || mode === "time")) {
+        if ((loadingScreensDisabled || bypassLoader) && (mode === "maint" || mode === "infinite" || mode === "time")) {
             hideLoader();
             return;
         }
@@ -606,7 +698,10 @@ if (!isChattersPage) {
                 hideLoader();
             } else {
                 maintContent.style.display = "none";
-                showLoader();
+                if (!loadingScreensDisabled) {
+                    showLoader();
+                    startSlowTimer();
+                }
             }
         }
     }
