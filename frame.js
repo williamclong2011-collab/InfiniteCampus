@@ -444,23 +444,38 @@ document.addEventListener("DOMContentLoaded", () => {
     const abtDropdown = document.getElementById('abtDropdown');
     const updateToggle = document.getElementById('updateToggle');
     const updateDropdown = document.getElementById('updateDropdown');
+    function resyncThemedDropdown(dropdownEl) {
+        if (
+            typeof lastAppliedThemeKey !== 'undefined' &&
+            lastAppliedThemeKey === 'rgb' &&
+            typeof applySyncedRgbAnimation === 'function'
+        ) {
+            applySyncedRgbAnimation(dropdownEl);
+        }
+    }
     helpToggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        helpDropdown.style.display = helpDropdown.style.display === 'flex' ? 'none' : 'flex';
+        const isOpening = helpDropdown.style.display !== 'flex';
+        helpDropdown.style.display = isOpening ? 'flex' : 'none';
         updateDropdown.style.display = 'none';
         abtDropdown.style.display = 'none';
+        if (isOpening) resyncThemedDropdown(helpDropdown);
     });
     abtToggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        abtDropdown.style.display = abtDropdown.style.display === 'flex' ? 'none' : 'flex';
+        const isOpening = abtDropdown.style.display !== 'flex';
+        abtDropdown.style.display = isOpening ? 'flex' : 'none';
         updateDropdown.style.display = 'none';
         helpDropdown.style.display = 'none';
+        if (isOpening) resyncThemedDropdown(abtDropdown);
     });
     updateToggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        updateDropdown.style.display = updateDropdown.style.display === 'flex' ? 'none' : 'flex';
+        const isOpening = updateDropdown.style.display !== 'flex';
+        updateDropdown.style.display = isOpening ? 'flex' : 'none';
         abtDropdown.style.display = 'none';
         helpDropdown.style.display = 'none';
+        if (isOpening) resyncThemedDropdown(updateDropdown);
     });
     document.addEventListener('click', (e) => {
         if (!helpDropdown.contains(e.target) && !helpToggle.contains(e.target)) {
@@ -543,13 +558,21 @@ function appendToMain() {
         <br>
         <br>
         <center>
-            <div id="donation-auto-msg">
-                <p class="btxt">
-                    Infinite Campus Is A Free Service, But It Isn't Free To Run. If You Would Like To Support Us, Consider Donating
-                </p>
-                <a class="button apbtn" href="/InfiniteDonaters.html">
-                    Donate
-                </a>
+            <div id="donation-auto-msg" style="display: flex;background: var(--ic-panel);padding: 20px;border-radius:12px;width:fit-content;border:1px solid var(--ic-border)">
+                <div class="ic-app-icon cat-legacy">
+                    <i class="ic ic-heart-fill">
+                    </i>
+                </div>
+                <div style="display: flex;flex-direction: column;justify-content:center;align-items:center;">
+                    <p class="btxt" style="margin-left: 10px;">
+                        Infinite Campus Is A Free Service, But It Isn't Free To Run. If You Would Like To Support Us, Consider Donating
+                    </p>
+                    <a href="InfiniteDonaters.html" class="ic-accent-bg button" style="margin-left: 10px;width:fit-content;">
+                        <i class="ic ic-heart-fill">
+                        </i>
+                        Donate
+                    </a>
+                </div>
             </div>
             <br>
             <p class="btxt">

@@ -12,6 +12,7 @@ const channelList = document.getElementById("channels");
 const channelMentionSet = new Set();
 const pollDrawFns = new Map();
 const pollRevealed = new Set();
+let activePollVotesModal = null;
 const chatInput = document.getElementById("chatInput");
 const chatLog = document.getElementById("chatLog");
 const downloadBtn = document.createElement("a");
@@ -1476,7 +1477,7 @@ function openPollCreateModal(channel) {
             <button id="pollCancelBtn" type="button" style="background:none;border:1px solid #555;color:#fff;border-radius:6px;padding:8px 16px;cursor:pointer;">
                 Cancel
             </button>
-            <button id="pollCreateBtn" class="ic-accent-bg" type="button" style="border:none;border-radius:6px;padding:8px 16px;cursor:pointer;">
+            <button id="pollCreateBtn" class="ic-accent-bg themed" type="button" style="background:var(--ic-accent);border:none;border-radius:6px;padding:8px 16px;cursor:pointer;">
                 Create Poll
             </button>
         </div>
@@ -1542,8 +1543,15 @@ function openPollCreateModal(channel) {
 function renderPollAnswerHtml(raw) {
     let text = String(raw || "");
     text = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    text = text.replace(/\[([^\[\]]{1,150})\]\((https?:\/\/[^\s()]{1,500})\)/g, (m, label, url) => {
-        const safeUrl = url.replace(/"/g, "&quot;");
+    text = text.replace(/\[([^\[\]]{1,150})\]\(([^\s()]{1,500})\)/g, (m, label, url) => {
+        let safeUrl = url.replace(/"/g, "&quot;");
+        if (/^\//.test(safeUrl)) {
+        } else if (/^https?:\/\//i.test(safeUrl)) {
+        } else if (/^[a-z][a-z0-9+.-]*:/i.test(safeUrl)) {
+            return label;
+        } else {
+            safeUrl = "https://" + safeUrl;
+        }
         return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color:#4fa3ff;">${label}</a>`;
     });
     return text;
@@ -1558,6 +1566,119 @@ function pollTimeRemainingText(poll) {
     if (hours < 24) return `${hours}h Left`;
     const days = Math.ceil(hours / 24);
     return `${days}d Left`;
+}
+function openPollVotesModal(id, poll) {
+    const old = document.querySelector(".poll-votes-overlay");
+    if (old) old.remove();
+    const overlay = document.createElement("div");
+    overlay.className = "poll-votes-overlay";
+    overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:10000;";
+    const box = document.createElement("div");
+    box.style.cssText = "background:#222;border:1px solid #444;border-radius:10px;width:560px;max-width:94vw;height:440px;max-height:82vh;color:#fff;position:relative;display:flex;flex-direction:column;overflow:hidden;";
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.innerHTML = "&times;";
+    closeBtn.title = "Close";
+    closeBtn.style.cssText = "position:absolute;top:10px;right:10px;background:none;border:none;color:#aaa;font-size:1.4em;line-height:1;cursor:pointer;padding:2px 6px;z-index:1;";
+    const close = () => {
+        overlay.remove();
+        if (activePollVotesModal && activePollVotesModal.id === id) activePollVotesModal = null;
+    };
+    closeBtn.onclick = close;
+    const header = document.createElement("div");
+    header.style.cssText = "padding:16px 44px 12px 20px;border-bottom:1px solid #333;flex-shrink:0;";
+    const heading = document.createElement("h2");
+    heading.style.cssText = "margin:0 0 4px 0;font-size:1.1em;";
+    heading.textContent = "Votes";
+    header.appendChild(heading);
+    const questionEl = document.createElement("div");
+    questionEl.style.cssText = "color:#999;font-size:0.85em;white-space:pre-wrap;overflow-wrap:anywhere;";
+    header.appendChild(questionEl);
+    const mainRow = document.createElement("div");
+    mainRow.style.cssText = "display:flex;flex:1;min-height:0;";
+    const sidebar = document.createElement("div");
+    sidebar.style.cssText = "width:170px;flex-shrink:0;border-right:1px solid #333;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:4px;";
+    const content = document.createElement("div");
+    content.style.cssText = "flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0;";
+    mainRow.appendChild(sidebar);
+    mainRow.appendChild(content);
+    box.appendChild(closeBtn);
+    box.appendChild(header);
+    box.appendChild(mainRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    let selectedId = null;
+    function pickDefaultAnswer(currentPoll) {
+        let best = null, bestCount = -1;
+        for (const ans of currentPoll.answers) {
+            const count = ans.votes ? Object.keys(ans.votes).length : 0;
+            if (count > bestCount) { bestCount = count; best = ans.id; }
+        }
+        return best;
+    }
+    function renderSidebar(currentPoll) {
+        sidebar.innerHTML = "";
+        for (const ans of currentPoll.answers) {
+            const count = ans.votes ? Object.keys(ans.votes).length : 0;
+            const isSelected = ans.id === selectedId;
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:6px;width:100%;text-align:left;background:"
+                + (isSelected ? "color-mix(in srgb, var(--ic-accent) 20%, transparent)" : "none")
+                + ";border:1px solid " + (isSelected ? "var(--ic-accent)" : "#444")
+                + ";color:#fff;border-radius:6px;padding:8px 10px;cursor:pointer;font-size:0.85em;";
+            btn.innerHTML = `<span style="overflow-wrap:anywhere;flex:1;min-width:0;">${renderPollAnswerHtml(ans.text)}</span><span style="color:#999;font-size:0.85em;white-space:nowrap;">${count}</span>`;
+            btn.onclick = () => {
+                if (selectedId === ans.id) return;
+                selectedId = ans.id;
+                renderSidebar(currentPoll);
+                renderContent(currentPoll);
+            };
+            sidebar.appendChild(btn);
+        }
+    }
+    function renderContent(currentPoll) {
+        content.innerHTML = "";
+        const ans = currentPoll.answers.find(a => a.id === selectedId);
+        if (!ans) return;
+        const voterUids = Object.keys(ans.votes || {});
+        if (!voterUids.length) {
+            const empty = document.createElement("div");
+            empty.textContent = "No Votes Yet.";
+            empty.style.cssText = "color:#666;font-size:0.9em;font-style:italic;";
+            content.appendChild(empty);
+            return;
+        }
+        for (const uid of voterUids) {
+            const row = document.createElement("div");
+            row.style.cssText = "display:flex;align-items:center;gap:10px;";
+            const img = document.createElement("img");
+            img.style.cssText = "width:30px;height:30px;border-radius:50%;object-fit:cover;border:2px solid #444;flex-shrink:0;";
+            img.src = `${pfpDomain}/1.jpeg`;
+            const nameSpan = document.createElement("span");
+            nameSpan.textContent = "Loading...";
+            nameSpan.style.cssText = "font-size:0.95em;overflow-wrap:anywhere;";
+            row.appendChild(img);
+            row.appendChild(nameSpan);
+            content.appendChild(row);
+            getUserMeta(uid).then(meta => {
+                nameSpan.textContent = meta.displayName || "User";
+                nameSpan.style.color = meta.color || "#fff";
+                img.src = `${pfpDomain}/${uid}`;
+                img.style.borderColor = meta.color || "#444";
+            }).catch(() => {});
+        }
+    }
+    function render(currentPoll) {
+        questionEl.innerHTML = renderPollAnswerHtml(currentPoll.question);
+        const stillValid = selectedId != null && currentPoll.answers.some(a => a.id === selectedId);
+        if (!stillValid) selectedId = pickDefaultAnswer(currentPoll);
+        renderSidebar(currentPoll);
+        renderContent(currentPoll);
+    }
+    render(poll);
+    activePollVotesModal = { id, render };
 }
 async function renderPollMessage(id, msg) {
     const div = document.createElement("div");
@@ -1666,11 +1787,25 @@ async function renderPollMessage(id, msg) {
                 } else {
                     answerIds = [ans.id];
                 }
+                const ch = currentPath ? currentPath.split("/")[1] : null;
+                if (!ch) return;
+                const previousPoll = JSON.parse(JSON.stringify(poll));
+                const uid = currentUser.uid;
+                for (const otherAns of poll.answers) {
+                    if (otherAns.votes && otherAns.votes[uid]) delete otherAns.votes[uid];
+                }
+                for (const aid of answerIds) {
+                    const target = poll.answers.find(a2 => a2.id === aid);
+                    if (target) {
+                        if (!target.votes) target.votes = {};
+                        target.votes[uid] = true;
+                    }
+                }
+                draw(poll);
                 try {
-                    const ch = currentPath ? currentPath.split("/")[1] : null;
-                    if (!ch) return;
                     await fetchAPI("poll/vote", { channel: ch, id, answerIds });
                 } catch (err) {
+                    draw(previousPoll);
                     showError(err?.message || "Failed To Vote.");
                 }
             });
@@ -1681,7 +1816,9 @@ async function renderPollMessage(id, msg) {
         const infoSpan = document.createElement("span");
         infoSpan.textContent = `${total} Vote${total === 1 ? "" : "s"} · ${pollTimeRemainingText(poll)}${poll.multi ? " · Multiple Choice" : ""}`;
         footer.appendChild(infoSpan);
-        if (isCreator && !showResults) {
+        const footerActions = document.createElement("span");
+        footerActions.style.cssText = "display:flex;gap:6px;align-items:center;";
+        if (isCreator) {
             const showVotesBtn = document.createElement("button");
             showVotesBtn.textContent = "Show Votes";
             showVotesBtn.style.cssText = "background:none;border:1px solid #555;color:#ccc;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:1em;";
@@ -1689,10 +1826,37 @@ async function renderPollMessage(id, msg) {
                 e.stopPropagation();
                 pollRevealed.add(id);
                 draw(poll);
+                openPollVotesModal(id, poll);
             };
-            footer.appendChild(showVotesBtn);
+            footerActions.appendChild(showVotesBtn);
         }
+        if (hasVoted && !poll.ended) {
+            const removeVoteBtn = document.createElement("button");
+            removeVoteBtn.textContent = "Remove Vote";
+            removeVoteBtn.style.cssText = "background:none;border:1px solid #555;color:#ccc;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:1em;";
+            removeVoteBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if (!currentUser || isGuest) { showError("You Must Be Logged In To Use This Feature."); return; }
+                const ch = currentPath ? currentPath.split("/")[1] : null;
+                if (!ch) return;
+                const previousPoll = JSON.parse(JSON.stringify(poll));
+                const uid = currentUser.uid;
+                for (const ans of poll.answers) {
+                    if (ans.votes && ans.votes[uid]) delete ans.votes[uid];
+                }
+                draw(poll);
+                try {
+                    await fetchAPI("poll/remove-vote", { channel: ch, id });
+                } catch (err) {
+                    draw(previousPoll);
+                    showError(err?.message || "Failed To Remove Vote.");
+                }
+            };
+            footerActions.appendChild(removeVoteBtn);
+        }
+        if (footerActions.childNodes.length) footer.appendChild(footerActions);
         body.appendChild(footer);
+        if (activePollVotesModal && activePollVotesModal.id === id) activePollVotesModal.render(poll);
     }
     pollDrawFns.set(id, draw);
     draw(msg.poll);
@@ -2813,17 +2977,17 @@ async function attachMessageListeners(path) {
             const existing = document.getElementById("msg-" + key);
             if (!existing) {
                 const newTs = Number(val.timestamp || key);
-                const msgsEls = Array.from(chatLog.querySelectorAll(".msg"));
-                const oldestRenderedTs = msgsEls.length > 0
-                    ? Number(msgsEls[0].dataset.timestamp || 0) : 0;
+                const oldestRenderedTs = chatLog.firstElementChild
+                    ? Number(chatLog.firstElementChild.dataset.timestamp || 0) : 0;
                 if (!renderedKeys.has(key) && newTs < oldestRenderedTs) {
                     continue;
                 }
                 renderedKeys.add(key);
                 const newDiv = await renderMessageInstant(key, val);
                 if (!newDiv) continue;
+                const msgsElsNow = Array.from(chatLog.querySelectorAll(".msg"));
                 let inserted = false;
-                for (const el of msgsEls) {
+                for (const el of msgsElsNow) {
                     if (Number(el.dataset.timestamp || 0) > newTs) {
                         chatLog.insertBefore(newDiv, el);
                         inserted = true;
@@ -2832,6 +2996,7 @@ async function attachMessageListeners(path) {
                 }
                 if (!inserted) chatLog.appendChild(newDiv);
                 initAudioPlayers(newDiv);
+                resolvePendingByContext("path", path, val);
                 if (autoScrollEnabled) scrollToBottom(true);
             } else if (lastSnapshot[key] && JSON.stringify(lastSnapshot[key]) !== JSON.stringify(val)) {
                 if (val.type === "poll" && val.poll) {
@@ -2865,6 +3030,7 @@ async function attachMessageListeners(path) {
                 renderedKeys.delete(key);
                 pollDrawFns.delete(key);
                 pollRevealed.delete(key);
+                if (activePollVotesModal && activePollVotesModal.id === key) activePollVotesModal = null;
             }
         }
         lastSnapshot = { ...newData };
@@ -3741,6 +3907,185 @@ function startMetadataListener() {
         updatePrivateListFromSnapshot(val || null);
     }, "privateChats");
 }
+(function injectPendingMessageStyles() {
+    if (document.getElementById("__pending-msg-styles")) return;
+    const style = document.createElement("style");
+    style.id = "__pending-msg-styles";
+    style.textContent = `
+        .msg-pending {
+            opacity: 0.55;
+            transition: opacity 0.2s ease;
+        }
+        .msg-status-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 6px;
+            width: 14px;
+            height: 14px;
+            vertical-align: middle;
+        }
+        .msg-status-spinner {
+            box-sizing: border-box;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid rgba(88,101,242,0.25);
+            border-top-color: #5865F2;
+            animation: msgSendSpin 0.7s linear infinite;
+        }
+        @keyframes msgSendSpin { to { transform: rotate(360deg); } }
+        .msg-status-error {
+            color: #ff5c5c;
+            font-size: 1em;
+            line-height: 1;
+        }
+        .retry-send-btn {
+            background: none;
+            border: 1px solid #ff5c5c;
+            color: #ff5c5c;
+            border-radius: 4px;
+            font-size: 0.75em;
+            padding: 2px 8px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .retry-send-btn:hover { background: rgba(255,92,92,0.12); }
+    `;
+    document.head.appendChild(style);
+})();
+let pendingMsgCounter = 0;
+const pendingMessages = new Map();
+const PENDING_CONFIRM_TIMEOUT = 10000;
+function isSelfAuthoredMsg(msg) {
+    if (!msg) return false;
+    if (isGuest) return msg.sender === "anon" && msg.u === anonDisplayName;
+    const senderId = msg.sender || msg.s;
+    return !!currentUser && senderId === currentUser.uid;
+}
+function resolvePendingByContext(contextType, contextKey, msg) {
+    if (!isSelfAuthoredMsg(msg)) return;
+    const incomingText = msg.t ?? msg.text;
+    for (const [, handle] of pendingMessages) {
+        if (handle.contextType === contextType && handle.context === contextKey && handle.text === incomingText) {
+            handle.finalize();
+            return;
+        }
+    }
+}
+function createPendingMessage(text, context) {
+    const tempId = "pending-" + Date.now() + "-" + (pendingMsgCounter++);
+    const div = document.createElement("div");
+    div.className = "msg msg-pending";
+    div.id = "msg-" + tempId;
+    const nowTs = Date.now();
+    div.dataset.timestamp = nowTs;
+    const topRow = document.createElement("div");
+    topRow.id = "topRow";
+    const leftWrapper = document.createElement("span");
+    leftWrapper.style.display = "flex";
+    leftWrapper.style.gap = "6px";
+    leftWrapper.style.alignItems = "center";
+    const profilePic = document.createElement("img");
+    profilePic.style.width = "32px";
+    profilePic.style.height = "32px";
+    profilePic.style.borderRadius = "50%";
+    profilePic.style.border = "2px solid #5865F2";
+    profilePic.style.objectFit = "cover";
+    profilePic.src = (currentUser && !isGuest) ? `${pfpDomain}/${currentUser.uid}?t=${nowTs}` : `${pfpDomain}/1.jpeg`;
+    profilePic.onerror = () => { profilePic.src = `${pfpDomain}/1.jpeg`; };
+    const nameSpan = document.createElement("span");
+    nameSpan.id = "msgName";
+    nameSpan.className = "highlight";
+    nameSpan.textContent = isGuest ? anonDisplayName : (currentName || "You");
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "timestamp";
+    timeSpan.textContent = formatTimestamp(nowTs);
+    const badgeContainer = document.createElement("span");
+    badgeContainer.id = "msgBadges";
+    const statusIcon = document.createElement("span");
+    statusIcon.className = "msg-status-icon";
+    const spinner = document.createElement("span");
+    spinner.className = "msg-status-spinner";
+    statusIcon.appendChild(spinner);
+    badgeContainer.appendChild(statusIcon);
+    leftWrapper.appendChild(profilePic);
+    leftWrapper.appendChild(nameSpan);
+    leftWrapper.appendChild(badgeContainer);
+    topRow.appendChild(leftWrapper);
+    topRow.appendChild(timeSpan);
+    const msgBtns = document.createElement("div");
+    msgBtns.id = "msgBtns";
+    const textDiv = document.createElement("div");
+    textDiv.className = "msg-text";
+    textDiv.style.whiteSpace = "pre-wrap";
+    textDiv.style.overflowWrap = "anywhere";
+    textDiv.style.marginLeft = "40px";
+    textDiv.style.marginTop = "-5px";
+    textDiv.innerHTML = buildSafeText(text);
+    div.appendChild(msgBtns);
+    div.appendChild(topRow);
+    div.appendChild(textDiv);
+    chatLog.appendChild(div);
+    if (autoScrollEnabled) chatLog.scrollTop = chatLog.scrollHeight;
+    const handle = {
+        tempId,
+        div,
+        text,
+        context: context?.key,
+        contextType: context?.type,
+        confirmed: false,
+        _timeoutId: null,
+        finalize() {
+            if (handle._timeoutId) { clearTimeout(handle._timeoutId); handle._timeoutId = null; }
+            div.remove();
+            pendingMessages.delete(tempId);
+        },
+        markSent() {
+            handle.confirmed = true;
+            handle._timeoutId = setTimeout(() => handle.finalize(), PENDING_CONFIRM_TIMEOUT);
+        },
+        markFailed(retryFn) {
+            handle.confirmed = false;
+            if (handle._timeoutId) { clearTimeout(handle._timeoutId); handle._timeoutId = null; }
+            statusIcon.innerHTML = "";
+            const errIcon = document.createElement("i");
+            errIcon.className = "ic ic-exclamation-triangle-fill msg-status-error";
+            errIcon.title = "Failed To Send";
+            statusIcon.appendChild(errIcon);
+            msgBtns.innerHTML = "";
+            const retryBtn = document.createElement("button");
+            retryBtn.className = "retry-send-btn";
+            retryBtn.innerHTML = `<i class="ic ic-arrow-clockwise"></i> Retry`;
+            retryBtn.title = "Retry Sending";
+            retryBtn.onclick = () => {
+                statusIcon.innerHTML = "";
+                statusIcon.appendChild(spinner);
+                msgBtns.innerHTML = "";
+                retryFn();
+            };
+            msgBtns.appendChild(retryBtn);
+        }
+    };
+    pendingMessages.set(tempId, handle);
+    return handle;
+}
+function sendTextWithOptimisticUI(text, sendFn, context) {
+    const handle = createPendingMessage(text, context);
+    const attempt = async () => {
+        try {
+            await sendFn();
+            handle.markSent();
+        } catch (e) {
+            handle.markFailed(attempt);
+            showError(e?.message || "Failed To Send Message.");
+        }
+    };
+    attempt();
+    return handle;
+}
 sendBtn.onclick = async () => {
     if (chatLockedDown) {
         showError("The Chat Is Currently Locked Down. Please Come Back Later.");
@@ -3764,9 +4109,20 @@ sendBtn.onclick = async () => {
             const preview = document.getElementById("chatFilePreview");
             if (preview) preview.remove();
         }
-        if (text) await sendGroupTextMessage(text);
-        chatInput.value = "";
-        toggleReply();
+        if (text) {
+            const replyToSend = replyMsgId;
+            const groupIdForSend = currentGroupId;
+            chatInput.value = "";
+            toggleReply();
+            sendTextWithOptimisticUI(
+                text,
+                () => fetchAPI(`groups/${groupIdForSend}/message`, { text, replyTo: replyToSend || undefined }),
+                { type: "group", key: groupIdForSend }
+            );
+        } else {
+            chatInput.value = "";
+            toggleReply();
+        }
         if (typeof window._clearChatAttachment === "function") window._clearChatAttachment();
         return;
     }
@@ -3813,27 +4169,25 @@ sendBtn.onclick = async () => {
         const ts = Date.now();
         const headers = { "Content-Type": "application/json" };
         if (anonSessionToken) headers["x-anon-session"] = anonSessionToken;
-        try {
+        const replyToSend = replyMsgId;
+        const pathForSend = currentPath;
+        chatInput.value = "";
+        toggleReply();
+        sendTextWithOptimisticUI(text, async () => {
             const res = await fetch(`${BACKEND}/write`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify({
                     path: ["messages", ch, String(ts)],
-                    value: { u: anonDisplayName, t: text, sender: "anon", r: replyMsgId || undefined },
+                    value: { u: anonDisplayName, t: text, sender: "anon", r: replyToSend || undefined },
                     anonSession: anonSessionToken
                 })
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                showError(err.error || "Failed To Send");
-                return;
+                throw new Error(err.error || "Failed To Send");
             }
-        } catch (e) {
-            showError("Failed to send: " + e.message);
-            return;
-        }
-        chatInput.value = "";
-        toggleReply();
+        }, { type: "path", key: pathForSend });
         return;
     }
     if (!currentUser) return;
@@ -3886,12 +4240,30 @@ sendBtn.onclick = async () => {
         r: replyMsgId || null
     };
     if (!msg.r) delete msg.r;
+    const finishCleanup = () => {
+        chatInput.value = "";
+        if (typeof window._clearChatAttachment === "function") window._clearChatAttachment();
+        toggleReply();
+        if (currentUser && currentPath.startsWith("messages/")) {
+            const channelName = currentPath.split("/")[1];
+            dbDelete(`typing/${channelName}/${currentUser.uid}`);
+        }
+    };
     if (currentPrivateUid) {
-        await sendPrivateMessage(currentPrivateUid, outgoingText);
         if (pendingAttachFile) {
+            await sendPrivateMessage(currentPrivateUid, outgoingText);
             const fileMsg = { s: currentUser.uid, t: "", r: replyMsgId || null };
             if (!fileMsg.r) delete fileMsg.r;
             await dbPushWithFile(currentPath, fileMsg, pendingAttachFile);
+            finishCleanup();
+        } else {
+            const pathForSend = currentPath;
+            finishCleanup();
+            sendTextWithOptimisticUI(
+                outgoingText,
+                () => sendPrivateMessage(currentPrivateUid, outgoingText),
+                { type: "path", key: pathForSend }
+            );
         }
     } else {
         const ch = currentPath.split("/")[1];
@@ -3904,16 +4276,16 @@ sendBtn.onclick = async () => {
             await dbPush(currentPath, msg);
             const fileMsg = { s: currentUser.uid, t: "", r: null };
             await dbPushWithFile(currentPath, fileMsg, pendingAttachFile);
+            finishCleanup();
         } else {
-            await dbPushWithFile(currentPath, msg, null);
+            const pathForSend = currentPath;
+            finishCleanup();
+            sendTextWithOptimisticUI(
+                outgoingText,
+                () => dbPushWithFile(pathForSend, msg, null),
+                { type: "path", key: pathForSend }
+            );
         }
-    }
-    chatInput.value = "";
-    if (typeof window._clearChatAttachment === "function") window._clearChatAttachment();
-    toggleReply();
-    if (currentUser && currentPath.startsWith("messages/")) {
-        const channelName = currentPath.split("/")[1];
-        dbDelete(`typing/${channelName}/${currentUser.uid}`);
     }
 };
 onAuthStateChanged(auth, async user => {
@@ -4831,6 +5203,7 @@ async function pollGroupOnce(groupId, isInitialLoad) {
             continue;
         }
         renderedGroupMsgIds.add(id);
+        if (!msg.system) resolvePendingByContext("group", groupId, msg);
         const div = await renderMessageInstant(id, msg.system ? { ...msg, s: "system" } : msg);
         if (div) {
             if (msg.system) {
@@ -5005,11 +5378,7 @@ if (groupLeaveBtn) groupLeaveBtn.onclick = () => {
 };
 async function sendGroupTextMessage(text) {
     if (!currentGroupId) return;
-    try {
-        await fetchAPI(`groups/${currentGroupId}/message`, { text, replyTo: replyMsgId || undefined });
-    } catch (e) {
-        showError(e?.message || "Could Not Send Message.");
-    }
+    await fetchAPI(`groups/${currentGroupId}/message`, { text, replyTo: replyMsgId || undefined });
 }
 async function uploadGroupAttachment(file) {
     if (!currentGroupId || !file) return;

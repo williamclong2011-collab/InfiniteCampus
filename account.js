@@ -298,7 +298,7 @@ if (enableNotifBtn) {
 (function setupNotifSettings() {
     const notifSettingsBtn = document.createElement("a");
     notifSettingsBtn.id = "notifSettingsBtn";
-    notifSettingsBtn.className = "button apbtn";
+    notifSettingsBtn.className = "button apbtn themed darkbuttons";
     notifSettingsBtn.textContent = "Notification Settings";
     notifSettingsBtn.style.display = "none";
     if (enableNotifBtn && enableNotifBtn.parentNode) {
@@ -465,8 +465,106 @@ if (unsub) {
     profileView.style.display = 'block';
     const style = document.createElement("style");
     style.innerHTML = `
+        #profileCard {
+            --acct-panel: #16120e;
+            --acct-panel-2: #1e1712;
+            --acct-border: color-mix(in srgb, var(--ic-accent) 28%, transparent);
+            --acct-border-soft: rgba(255,255,255,0.08);
+            --acct-accent: var(--ic-accent);
+            --acct-accent-2: var(--ic-accent-bright);
+            --acct-text: #f5f1e8;
+            --acct-muted: #a89e90;
+            --acct-green: #3ddc72;
+            --acct-red: #ff5c5c;
+            max-width: 1080px;
+            margin: 10px auto 30px;
+            padding: 0 16px;
+            color: var(--acct-text);
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            text-align: left;
+        }
         body {
             font-family: sans-serif;
+        }
+        #profileView {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            padding: 28px 16px;
+            box-sizing: border-box;
+        }
+        #profileCard {
+            width: 100%;
+            max-width: 540px;
+            margin: 0 auto;
+            background: linear-gradient(165deg, #1b1b1b, #141414);
+            border: 1px solid #2a2a2a;
+            border-radius: 18px;
+            padding: 28px 30px;
+            box-shadow: 0 20px 44px -26px rgba(0,0,0,0.7);
+            box-sizing: border-box;
+            text-align: left;
+        }
+        #loading {
+            text-align: center;
+            color: var(--ic-muted, #a79ea4);
+        }
+        #profileContent {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        #profileContent br {
+            display: none;
+        }
+        #profileContent hr {
+            width: 100%;
+            border: none;
+            border-top: 1px solid #2a2a2a;
+            margin: 0;
+        }
+        .profileTopCard {
+            display:flex;
+            align-items:center;
+            gap:16px;
+        }
+        .profileAvatarWrap {
+            position:relative;
+            flex-shrink:0;
+            height:fit-content;
+            background:inherit;
+        }
+        .profileAvatarWrap img {
+            display:block;
+        }
+        .profileNameCol {
+            display:flex;
+            flex-direction:column;
+            gap:6px;
+            min-width:0;
+        }
+        .profileNameWrap {
+            position:relative;
+            display:inline-flex;
+            align-items:center;
+            width:fit-content;
+        }
+        .statusBubble {
+            position:absolute;
+            right:-2px;
+            bottom:-2px;
+            width:40px;
+            height:40px;
+            border-radius:50%;
+            background:#1b1b1b;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            box-sizing:border-box;
+        }
+        .statusBubble i {
+            font-size:25px;
+            line-height:1;
         }
         .displayName {
             font-size:1.6em;
@@ -477,21 +575,502 @@ if (unsub) {
             transition:0.3s all;
         }
         .bio {
-            margin-bottom:12px;
+            margin-bottom:0;
             color:#ccc;
             white-space:pre-wrap;
         }
         .bio::before {
             content: "Bio: ";
+            color: var(--ic-muted, #a79ea4);
         }
         .uid {
             font-size:0.9em;
-            color:#777;
-            margin-top:10px;
+            color:#888;
+        }
+        #profileStats .btxt {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .profileActions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .profileBtn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            flex: 1;
+            min-width: 140px;
+            padding: 11px 20px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 0.95em;
+            cursor: pointer;
+            text-decoration: none;
+            border: 1px solid transparent;
+            transition: 0.2s all;
+            box-sizing: border-box;
+        }
+        .profileBtnPrimary {
+            background: linear-gradient(135deg, var(--ic-accent, #8cbe37), var(--ic-accent-dim, #445c1c));
+            color: #101410;
+        }
+        .profileBtnPrimary:hover {
+            filter: brightness(1.1);
+            box-shadow: 0 8px 20px -10px color-mix(in srgb, var(--ic-accent, #8cbe37) 60%, transparent);
+        }
+        .profileBtnGhost {
+            background: transparent;
+            border-color: #333;
+            color: var(--ic-text, #f2eff0);
+        }
+        .profileBtnGhost:hover {
+            border-color: var(--ic-accent, #8cbe37);
+            color: var(--ic-accent-bright, #22c55e);
+        }
+        @media (max-width: 600px) {
+            #profileCard {
+                padding: 22px 18px;
+                border-radius: 16px;
+            }
+            .profileTopCard {
+                flex-direction: column;
+                text-align: center;
+            }
+            .profileNameCol {
+                align-items: center;
+            }
+            .profileNameWrap {
+                justify-content: center;
+            }
+            .acctBadgeContainer, .acctBadgesList {
+                justify-content: center;
+            }
+            #profileStats, .uid {
+                text-align: center;
+            }
+            #profileStats .btxt {
+                justify-content: center;
+            }
+            .profileActions {
+                flex-direction: column;
+            }
+            .profileBtn {
+                width: 100%;
+            }
         }
         .error {
             color:red;
             font-weight:bold;
+        }
+        .acctStatusMsg {
+            text-align: center;
+        }
+        #acctWrap #bannedAccountNotice {
+            margin: 0 0 16px;
+        }
+        .acctHero {
+            display: none;
+            align-items: center;
+            gap: 22px;
+            background: linear-gradient(135deg, var(--acct-panel), var(--acct-panel-2));
+            border: 1px solid var(--acct-border);
+            border-radius: 18px;
+            padding: 22px 26px;
+            margin-bottom: 20px;
+            box-shadow: 0 12px 30px -18px color-mix(in srgb, var(--ic-accent) 35%, transparent);
+            flex-wrap: wrap;
+        }
+        .acctHero #pfp {
+            flex-shrink: 0;
+        }
+        .acctHeroInfo {
+            flex: 1;
+            min-width: 220px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .acctEditRow {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid var(--acct-border-soft);
+            border-radius: 10px;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.02);
+        }
+        .acctNameEditRow {
+            border-color: transparent;
+            background: transparent;
+            padding: 2px 0;
+        }
+        .acctDisplayNameInput {
+            font-size: 1.7em !important;
+            font-weight: 800;
+            color: var(--acct-text);
+        }
+        .acctBioEditRow textarea {
+            color: var(--acct-muted);
+            font-size: 0.95em;
+        }
+        .acctTextareaWrap {
+            position: relative;
+            flex: 1;
+            min-width: 0;
+        }
+        .acctTextareaWrap textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding-right: 48px;
+        }
+        .acctTextareaWrap .acctCharCount {
+            position: absolute;
+            right: 8px;
+            bottom: 4px;
+            pointer-events: none;
+        }
+        .acctCharCount {
+            color: var(--acct-muted);
+            font-size: 0.75em;
+        }
+        .acctIconBtn {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid var(--acct-border-soft);
+            background: transparent;
+            color: var(--acct-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s all;
+        }
+        .acctIconBtn:hover {
+            color: #111;
+            background: var(--acct-accent);
+            border-color: var(--acct-accent);
+        }
+        .acctGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: start;
+        }
+        @media (max-width: 860px) {
+            .acctGrid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .acctCard {
+            background: var(--acct-panel);
+            border: 1px solid var(--acct-border);
+            border-radius: 16px;
+            padding: 22px;
+            height:100%;
+            display:flex;
+            flex-direction:column;
+        }
+        .acctCardTitle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.1em;
+            font-weight: 700;
+            color: var(--acct-text);
+        }
+        .acctCardTitle i {
+            color: var(--acct-accent);
+            font-size: 1.1em;
+        }
+        .acctUnderline {
+            height: 2px;
+            background: linear-gradient(90deg, var(--acct-accent), transparent);
+            margin: 10px 0 18px;
+        }
+        .acctFieldLabel {
+            display: block;
+            color: var(--acct-muted);
+            font-size: 0.85em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 16px 0 6px;
+        }
+        .acctCard > .acctFieldLabel:first-of-type {
+            margin-top: 0;
+        }
+        .acctColorRow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .acctSwatches {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .acctSwatchBtn {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.35);
+            cursor: pointer;
+            padding: 0;
+        }
+        .acctSwatchBtn:hover {
+            border-color: var(--acct-accent);
+        }
+        .acctColorInput {
+            width: 40px;
+            height: 32px;
+            padding: 2px;
+            background: #000;
+        }
+        .acctBadgeContainer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .acctBadgesList {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .acctBadgeChip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            font-size: 0.82em;
+            font-weight: 700;
+            white-space: nowrap;
+            border: 1px solid color-mix(in srgb, var(--chip-color, var(--acct-accent)) 55%, transparent);
+            background: color-mix(in srgb, var(--chip-color, var(--acct-accent)) 16%, transparent);
+        }
+        .acctMuted {
+            color: var(--acct-muted);
+            font-size: 0.85em;
+        }
+        .acctStatusWrap {
+            position: relative;
+            display:flex;
+            justify-content:center;
+            margin-bottom:5px;
+        }
+        .acctStatusRow {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border: 1px solid var(--acct-border-soft);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.02);
+            cursor: pointer;
+            width: fit-content;
+        }
+        .acctChevron {
+            font-size: 0.75em;
+            color: var(--acct-muted);
+            margin-left: 4px;
+        }
+        .acctStatusDropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            background: var(--acct-panel-2);
+            border: 1px solid var(--acct-border);
+            border-radius: 10px;
+            padding: 6px;
+            z-index: 20;
+            min-width: 200px;
+            box-shadow: 0 10px 24px -10px rgba(0,0,0,0.6);
+        }
+        .acctStatusDropdown .statusOption {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--acct-text);
+        }
+        .acctStatusDropdown .statusOption:hover {
+            background: rgba(255,255,255,0.06);
+        }
+        .acctStatusDropdown .statusOptionLabel {
+            flex: 1;
+        }
+        .acctStatusDropdown .statusCheck {
+            visibility: hidden;
+            color: var(--acct-accent);
+        }
+        .acctAdminBtnWrap {
+            margin-top: 18px;
+            flex:1;
+            align-items:end;
+        }
+        .acctBtn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: linear-gradient(135deg, var(--acct-accent), var(--ic-accent-dim));
+            color: #1a1305;
+            font-weight: 700;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 18px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: 0.2s all;
+            font-size: 0.95em;
+        }
+        .acctBtn:hover {
+            filter: brightness(1.08);
+            color: #1a1305;
+        }
+        .acctBtnAdmin {
+            width: 100%;
+        }
+        .acctBtnSmall {
+            padding: 8px 14px;
+            font-size: 0.88em;
+        }
+        .acctBtnTiny {
+            padding: 4px 10px;
+            font-size: 0.75em;
+            margin-left: 8px;
+        }
+        .acctBtnGhost {
+            background: transparent;
+            border: 1px solid var(--acct-border-soft);
+            color: var(--acct-text);
+        }
+        .acctBtnGhost:hover {
+            border-color: var(--acct-accent);
+            color: var(--acct-accent-2);
+        }
+        .acctBtnDanger {
+            background: transparent;
+            border: 1px solid rgba(255,92,92,0.5);
+            color: var(--acct-red);
+        }
+        .acctBtnDanger:hover {
+            background: rgba(255,92,92,0.12);
+            color: var(--acct-red);
+        }
+        .acctPrefRow {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 14px 16px;
+            border: 1px solid var(--acct-border-soft);
+            border-radius: 12px;
+            margin-bottom: 14px;
+            background: rgba(255,255,255,0.02);
+            flex-wrap: wrap;
+        }
+        .acctPrefRowColumn {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .acctPrefRowText {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .acctPrefIcon {
+            font-size: 1.3em;
+            color: var(--acct-accent);
+        }
+        .acctPrefTitle {
+            font-weight: 700;
+        }
+        .acctPrefBtns {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        #mbBtns br {
+            display: none;
+        }
+        .acctExtensionSection {
+            margin-top: 10px;
+        }
+        #extCheckContainer .extCheckItem {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--acct-border-soft);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            padding: 8px 12px;
+        }
+        #extCheckContainer .extCheckItem:last-child {
+            margin-bottom: 0;
+        }
+        .acctInfoCard {
+            margin-bottom: 20px;
+        }
+        .acctInfoGrid {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+        .acctInfoList {
+            flex: 1;
+            min-width: 260px;
+        }
+        .acctInfoRow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 11px 0;
+            border-bottom: 1px dashed var(--acct-border-soft);
+            flex-wrap: wrap;
+        }
+        .acctInfoRow:last-child {
+            border-bottom: none;
+        }
+        .acctInfoRow > i {
+            color: var(--acct-accent);
+            width: 18px;
+            text-align: center;
+        }
+        .acctInfoLabel {
+            color: var(--acct-muted);
+            font-weight: 600;
+            min-width: 110px;
+        }
+        .acctInfoValue {
+            color: var(--acct-text);
+        }
+        .acctInfoBtns {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            justify-content: center;
+            min-width: 200px;
+        }
+        .acctInfoBtns .acctBtn {
+            width: 100%;
+        }
+        #verifiedDisplay {
+            font-size: 0.8em;
+            margin-top: 2px !important;
         }
     `;
     document.head.appendChild(style);
@@ -506,58 +1085,66 @@ if (unsub) {
     const uid = urlParams.get("user");
     const profileStats = document.getElementById('profileStats');
     function createBadge(profile, isVerified, dUsername, uploads) {
-        const badgeContainer = document.createElement("span");
-        badgeContainer.style.display = "flex";
-        badgeContainer.style.alignItems = "center";
-        badgeContainer.style.gap = "6px";
-        badgeContainer.style.marginLeft = "6px";
+        const badgeContainer = document.createElement("div");
+        badgeContainer.className = "acctBadgeContainer";
+        const badgesList = document.createElement("div");
+        badgesList.className = "acctBadgesList";
+        badgeContainer.appendChild(badgesList);
+        const noBadgesMsg = document.createElement("div");
+        noBadgesMsg.className = "acctMuted";
+        noBadgesMsg.textContent = "No Badges Yet.";
+        noBadgesMsg.style.display = "none";
+        badgeContainer.appendChild(noBadgesMsg);
+        let hasAnyBadge = false;
+        function addChip(name, color, icon, short) {
+            hasAnyBadge = true;
+            const chip = document.createElement("span");
+            chip.className = "acctBadgeChip niceTitle";
+            const chipColor = color || "var(--acct-text)";
+            chip.style.color = chipColor;
+            chip.style.setProperty("--chip-color", chipColor);
+            chip.title = name;
+            chip.innerHTML = `<i class="${icon}"></i><span>${short || name}</span>`;
+            badgesList.appendChild(chip);
+        }
         const roles = [
-            { key: "isSus", icon: "ic ic-shield-exclamation", title: "This User Is Currently Under Investigation, Please Do Not Interact With This User", color: "red" },
-            { key: "isOwner", icon: "ic ic-shield-plus", title: "Owner", color: "lime" },
-            { key: "isTester", icon: "ic ic-cogs", title: "Tester", color: "DarkGoldenRod" },
-            { key: "isCoOwner", icon: "ic ic-shield-fill", title: "Co-Owner", color: "lightblue" },
-            { key: "isHAdmin", icon: "ic ic-shield-halved", title: "Head Admin", color: "#00cc99" },
-            { key: "isAdmin", icon: "ic ic-shield", title: "Admin", color: "dodgerblue" },
-            { key: "isPartner", icon: "ic ic-handshake", title: "This User Is A Partner Of Infinite Campus", color: "cornflowerblue" },
-            { key: "isDev", icon: "ic ic-code-square", title: "This User Is A Developer For Infinite Campus Games", color: "green" },
-            { key: "premium3", icon: "ic ic-hearts", title: "This User Has Infinite Campus Premium T3", color: "red" },
-            { key: "premium2", icon: "ic ic-heart-fill", title: "This User Has Infinite Campus Premium T2", color: "orange" },
-            { key: "premium1", icon: "ic ic-heart-half", title: "This User Has Infinite Campus Premium T1", color: "yellow" },
-            { key: "isDonater", icon: "ic ic-balloon-heart", title: "This User Has Donated To Infinite Campus", color: "#00E5FF"},
-            { key: "isUploader", icon: "ic ic-film", title: "This User Has Uploaded A Movie To Infinite Campus", color: "grey"},
-            { key: "mileStone", icon: "ic ic-award", title: "This User Is The 100th Signed Up User", color: "yellow" },
-            { key: "isGuesser", icon: "ic ic-stopwatch", title: "This User Has A Lot Of Freetime", color: "#FF0000" },
-            { key: "isLink", icon: "ic ic-link", title: "This Use Has Shared Lots Of Links In The Links Channel", color: "#4fa3ff"},
-            { key: "secure", icon: "ib ic ic-securely", title: "This User Has Securely At School", color: ""},
-            { key: "guardian", icon: "ib ic ic-goguardian", title: "This User Has GoGuardian At School", color: ""},
-            { key: "lanschool", icon: "ib ic ic-lanschool", title: "This User Has Lanschool At School", color: ""},
-            { key: "linewize", icon: "ib ic ic-linewize", title: "This User Has Linewize At School", color: ""},
-            { key: "blocksi", icon: "ib ic ic-blocksi", title: "This User Has Blocksi At School", color: ""},
-            { key: "fortiguard", icon:"ib ic ic-fortiguard", title: "This User Has FortiGuard At School", color:"" },
-            { key: "lightspeed", icon:"ib ic ic-lightspeed", title: "This User Has LightSpeed At School", color:"" },
-            { key: "cisco", icon:"ib ic ic-cisco", title: "This User Has Cisco Umbrella At School", color:"" },
-            { key: "contentkeeper", icon:"ib ic ic-contentkeeper", title: "This User Has ContentKeeper At School", color:"" },
-            { key: "deledao", icon:"ib ic ic-deledao", title: "This User Has Deledao At School", color:""},
-            { key: "iboss", icon:"ib ic ic-iboss", title: "This User Has IBoss At School", color:"" },
-            { key: "barracuda", icon:"ib ic ic-barracuda", title: "This User Has Barracuda At School", color:"" },
+            { key: "isSus", icon: "ic ic-shield-exclamation", title: "This User Is Currently Under Investigation, Please Do Not Interact With This User", color: "red", short: "Flagged" },
+            { key: "isOwner", icon: "ic ic-shield-plus", title: "Owner", color: "lime", short: "Owner" },
+            { key: "isTester", icon: "ic ic-cogs", title: "Tester", color: "DarkGoldenRod", short: "Tester" },
+            { key: "isCoOwner", icon: "ic ic-shield-fill", title: "Co-Owner", color: "lightblue", short: "Co-Owner" },
+            { key: "isHAdmin", icon: "ic ic-shield-halved", title: "Head Admin", color: "#00cc99", short: "Head Admin" },
+            { key: "isAdmin", icon: "ic ic-shield", title: "Admin", color: "dodgerblue", short: "Admin" },
+            { key: "isPartner", icon: "ic ic-handshake", title: "This User Is A Partner Of Infinite Campus", color: "cornflowerblue", short: "Partner" },
+            { key: "isDev", icon: "ic ic-code-square", title: "This User Is A Developer For Infinite Campus Games", color: "green", short: "Developer" },
+            { key: "premium3", icon: "ic ic-hearts", title: "This User Has Infinite Campus Premium T3", color: "red", short: "Premium T3" },
+            { key: "premium2", icon: "ic ic-heart-fill", title: "This User Has Infinite Campus Premium T2", color: "orange", short: "Premium T2" },
+            { key: "premium1", icon: "ic ic-heart-half", title: "This User Has Infinite Campus Premium T1", color: "yellow", short: "Premium" },
+            { key: "isDonater", icon: "ic ic-balloon-heart", title: "This User Has Donated To Infinite Campus", color: "#00E5FF", short: "Donator"},
+            { key: "isUploader", icon: "ic ic-film", title: "This User Has Uploaded A Movie To Infinite Campus", color: "grey", short: "Uploader"},
+            { key: "mileStone", icon: "ic ic-award", title: "This User Is The 100th Signed Up User", color: "yellow", short: "100th User" },
+            { key: "isGuesser", icon: "ic ic-stopwatch", title: "This User Has A Lot Of Freetime", color: "#FF0000", short: "Guesser" },
+            { key: "isLink", icon: "ic ic-link", title: "This Use Has Shared Lots Of Links In The Links Channel", color: "#4fa3ff", short: "Link Sharer"},
+            { key: "secure", icon: "ib ic ic-securely", title: "This User Has Securely At School", color: "", short: "Securely"},
+            { key: "guardian", icon: "ib ic ic-goguardian", title: "This User Has GoGuardian At School", color: "", short: "GoGuardian"},
+            { key: "lanschool", icon: "ib ic ic-lanschool", title: "This User Has Lanschool At School", color: "", short: "Lanschool"},
+            { key: "linewize", icon: "ib ic ic-linewize", title: "This User Has Linewize At School", color: "", short: "Linewize"},
+            { key: "blocksi", icon: "ib ic ic-blocksi", title: "This User Has Blocksi At School", color: "", short: "Blocksi"},
+            { key: "fortiguard", icon:"ib ic ic-fortiguard", title: "This User Has FortiGuard At School", color:"", short: "FortiGuard" },
+            { key: "lightspeed", icon:"ib ic ic-lightspeed", title: "This User Has LightSpeed At School", color:"", short: "LightSpeed" },
+            { key: "cisco", icon:"ib ic ic-cisco", title: "This User Has Cisco Umbrella At School", color:"", short: "Cisco Umbrella" },
+            { key: "contentkeeper", icon:"ib ic ic-contentkeeper", title: "This User Has ContentKeeper At School", color:"", short: "ContentKeeper" },
+            { key: "deledao", icon:"ib ic ic-deledao", title: "This User Has Deledao At School", color:"", short: "Deledao"},
+            { key: "iboss", icon:"ib ic ic-iboss", title: "This User Has IBoss At School", color:"", short: "IBoss" },
+            { key: "barracuda", icon:"ib ic ic-barracuda", title: "This User Has Barracuda At School", color:"", short: "Barracuda" },
 
         ];
         roles.forEach(r => {
             if (profile?.[r.key] === true) {
-                const badge = document.createElement("i");
-                badge.className = `${r.icon}`;
-                badge.title = r.title;
-                badge.style.color = r.color;
-                badge.style.fontSize = "1.1em";
-                badgeContainer.appendChild(badge);
+                addChip(r.title, r.color, r.icon, r.short);
             }
         });
         if (dUsername && dUsername.trim() !== "") {
-            const discordBadge = document.createElement("i");
-            discordBadge.className = "ic ic-discord";
-            discordBadge.title = `Known As @${dUsername} On The Infinite Campus Discord Server`;
-            discordBadge.style.color = "#5865F2";
-            badgeContainer.appendChild(discordBadge);
+            addChip(`Known As @${dUsername} On The Infinite Campus Discord Server`, "#5865F2", "ic ic-discord", `@${dUsername}`);
         }
         if (uploads && uploads !== "") {
             const stat = document.createElement("div");
@@ -565,15 +1152,17 @@ if (unsub) {
             stat.style.padding = "5px 3px";
             stat.innerHTML = `<span>Movies Uploaded:</span><span>${uploads}</span>`;
             profileStats.appendChild(stat);
+        } else {
+            const stat = document.createElement("div");
+            stat.classList = "btxt";
+            stat.style.padding = "5px 3px";
+            stat.innerHTML = `<span>This User Hasn't Uploaded Any Movies Yet</span>`;
+            profileStats.appendChild(stat);
         }
         if (isVerified === true) {
-            const verified = document.createElement("i");
-            verified.className = "ic ic-shield-check";
-            verified.title = "Verified User";
-            verified.style.color = "white";
-            verified.style.fontSize = "1.1em";
-            badgeContainer.appendChild(verified);
+            addChip("Verified User", "white", "ic ic-shield-check", "Verified");
         }
+        noBadgesMsg.style.display = hasAnyBadge ? "none" : "block";
         return badgeContainer;
     }
     if (!uid) {
@@ -591,15 +1180,15 @@ if (unsub) {
             }
             const foundUser = userSnap.data;
             const user = currentUser;
-            let viewerIsOwner = false;
+            let viewerCanSeeEmail = false;
             try {
                 if (currentUser) {
                     const me = await fetchAPI("read", {
                         path: ["users", currentUser.uid, "profile"]
                     });
                     const p = me?.data;
-                    if (p?.isOwner || p?.isCoOwner || p?.isHAdmin || p?.isDev) {
-                        viewerIsOwner = true;
+                    if (p?.isOwner || p?.isCoOwner || p?.isHAdmin || p?.isDev || p?.isAdmin) {
+                        viewerCanSeeEmail = true;
                     }
                 }
             } catch {}
@@ -611,44 +1200,64 @@ if (unsub) {
             const imgSrc = `${pfpDomain}/${uid}?t=${Date.now()}`;
             loadingEl.style.display = "none";
             errorEl.style.display = "none";
-            profileContent.style.display = "block";
+            profileContent.style.display = "flex";
             displayNameEl.innerHTML = "";
-            const container = document.createElement("div");
-            container.style.display = "flex";
-            container.style.alignItems = "center";
-            container.style.gap = "10px";
+            displayNameEl.className = "profileTopCard";
+            const avatarWrap = document.createElement("div");
+            avatarWrap.className = "profileAvatarWrap";
             const img = document.createElement("img");
             img.src = imgSrc;
             img.alt = "Profile Icon";
-            img.style.width = "60px";
-            img.style.height = "60px";
-            img.style.marginLeft = "20px";
+            img.style.width = "100px";
+            img.style.height = "100px";
             img.style.borderRadius = "50%";
-            img.style.border = "2px solid white";
+            img.style.border = "1px solid white";
             img.style.objectFit = "cover";
+            avatarWrap.appendChild(img);
+            const statusBubble = document.createElement("span");
+            statusBubble.className = "statusBubble";
+            const statusIconEl = document.createElement("i");
+            statusBubble.appendChild(statusIconEl);
+            function renderViewedStatus(status) {
+                const meta = STATUS_META[normalizeStatus(status)];
+                if (!meta) return;
+                statusIconEl.className = meta.icon;
+                statusIconEl.style.color = meta.color;
+                statusBubble.title = meta.label;
+            }
+            renderViewedStatus("offline");
+            dbGet(`users/${uid}/profile/status`).then(renderViewedStatus).catch(() => {});
+            dbListen(`users/${uid}/profile/status`, renderViewedStatus);
+            avatarWrap.appendChild(statusBubble);
+            const nameCol = document.createElement("div");
+            nameCol.className = "profileNameCol";
+            const nameWrap = document.createElement("div");
+            nameWrap.className = "profileNameWrap";
             const nameSpan = document.createElement("span");
             nameSpan.textContent = `@${displayName}`;
             nameSpan.style.color = color;
             nameSpan.style.fontSize = "1.2em";
             nameSpan.style.fontWeight = "600";
-            container.appendChild(img);
-            container.appendChild(nameSpan);
+            nameWrap.appendChild(nameSpan);
+            nameCol.appendChild(nameWrap);
+            nameCol.appendChild(bioEl);
+            bioEl.textContent = bio;
+            displayNameEl.appendChild(avatarWrap);
+            displayNameEl.appendChild(nameCol);
             const isVerified = foundUser.profile?.verified === true;
             const dUsername = foundUser.profile?.dUsername || "";
             const uploads = foundUser.profile?.uploads || "";
-            const badgeEl = createBadge(foundUser.profile, isVerified, dUsername, uploads);
-            container.appendChild(badgeEl);
-            displayNameEl.appendChild(container);
-            bioEl.textContent = bio;
+            const badgesRow = createBadge(foundUser.profile, isVerified, dUsername, uploads);
+            displayNameEl.after(badgesRow);
             uidEl.innerHTML = `User ID: ${uid}`;
-            if (viewerIsOwner && foundUser.settings?.userEmail) {
+            if (viewerCanSeeEmail && foundUser.settings?.userEmail) {
                 const emailEl = document.createElement("div");
                 emailEl.style.marginTop = "5px";
                 emailEl.textContent = `Email: ${email}`;
                 uidEl.appendChild(emailEl);
             }
             if (messageBtn) {
-                messageBtn.style.display = "inline-block";
+                messageBtn.style.display = "inline-flex";
                 messageBtn.onclick = () => {
                     localStorage.setItem("openPrivateChatUid", uid);
                     window.location.href = "InfiniteChatters.html";
@@ -712,7 +1321,6 @@ if (unsub) {
             padding: 4px 2px;
             display:flex;
             flex-direction:column;
-            gap:10px;
         }
         .extCheckItem {
             display: flex;
@@ -735,6 +1343,429 @@ if (unsub) {
             margin-left: auto;
             flex-shrink: 0;
             max-width:50px;
+        }
+        #acctWrap {
+            --acct-panel: #16120e;
+            --acct-panel-2: #1e1712;
+            --acct-border: color-mix(in srgb, var(--ic-accent) 28%, transparent);
+            --acct-border-soft: rgba(255,255,255,0.08);
+            --acct-accent: var(--ic-accent);
+            --acct-accent-2: var(--ic-accent-bright);
+            --acct-text: #f5f1e8;
+            --acct-muted: #a89e90;
+            --acct-green: #3ddc72;
+            --acct-red: #ff5c5c;
+            max-width: 1080px;
+            margin: 10px auto 30px;
+            padding: 0 16px;
+            color: var(--acct-text);
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            text-align: left;
+        }
+        .acctStatusMsg {
+            text-align: center;
+        }
+        #acctWrap #bannedAccountNotice {
+            margin: 0 0 16px;
+        }
+        .acctHero {
+            display: none;
+            align-items: center;
+            gap: 22px;
+            background: linear-gradient(135deg, var(--acct-panel), var(--acct-panel-2));
+            border: 1px solid var(--acct-border);
+            border-radius: 18px;
+            padding: 22px 26px;
+            margin-bottom: 20px;
+            box-shadow: 0 12px 30px -18px color-mix(in srgb, var(--ic-accent) 35%, transparent);
+            flex-wrap: wrap;
+        }
+        .acctHero #pfp {
+            flex-shrink: 0;
+        }
+        .acctHeroInfo {
+            flex: 1;
+            min-width: 220px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .acctEditRow {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid var(--acct-border-soft);
+            border-radius: 10px;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.02);
+        }
+        .acctNameEditRow {
+            border-color: transparent;
+            background: transparent;
+            padding: 2px 0;
+        }
+        .acctDisplayNameInput {
+            font-size: 1.7em !important;
+            font-weight: 800;
+            color: var(--acct-text);
+        }
+        .acctBioEditRow textarea {
+            color: var(--acct-muted);
+            font-size: 0.95em;
+        }
+        .acctTextareaWrap {
+            position: relative;
+            flex: 1;
+            min-width: 0;
+        }
+        .acctTextareaWrap textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding-right: 48px;
+        }
+        .acctTextareaWrap .acctCharCount {
+            position: absolute;
+            right: 8px;
+            bottom: 4px;
+            pointer-events: none;
+        }
+        .acctCharCount {
+            color: var(--acct-muted);
+            font-size: 0.75em;
+        }
+        .acctIconBtn {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid var(--acct-border-soft);
+            background: transparent;
+            color: var(--acct-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s all;
+        }
+        .acctIconBtn:hover {
+            color: #111;
+            background: var(--acct-accent);
+            border-color: var(--acct-accent);
+        }
+        .acctGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: start;
+        }
+        @media (max-width: 860px) {
+            .acctGrid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .acctCard {
+            background: var(--acct-panel);
+            border: 1px solid var(--acct-border);
+            border-radius: 16px;
+            padding: 22px;
+            height:100%;
+            display:flex;
+            flex-direction:column;
+        }
+        .acctCardTitle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.1em;
+            font-weight: 700;
+            color: var(--acct-text);
+        }
+        .acctCardTitle i {
+            color: var(--acct-accent);
+            font-size: 1.1em;
+        }
+        .acctUnderline {
+            height: 2px;
+            background: linear-gradient(90deg, var(--acct-accent), transparent);
+            margin: 10px 0 18px;
+        }
+        .acctFieldLabel {
+            display: block;
+            color: var(--acct-muted);
+            font-size: 0.85em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 16px 0 6px;
+        }
+        .acctCard > .acctFieldLabel:first-of-type {
+            margin-top: 0;
+        }
+        .acctColorRow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .acctSwatches {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .acctSwatchBtn {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.35);
+            cursor: pointer;
+            padding: 0;
+        }
+        .acctSwatchBtn:hover {
+            border-color: var(--acct-accent);
+        }
+        .acctColorInput {
+            width: 40px;
+            height: 32px;
+            padding: 2px;
+            background: #000;
+        }
+        .acctBadgeContainer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .acctBadgesList {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .acctBadgeChip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            font-size: 0.82em;
+            font-weight: 700;
+            white-space: nowrap;
+            border: 1px solid color-mix(in srgb, var(--chip-color, var(--acct-accent)) 55%, transparent);
+            background: color-mix(in srgb, var(--chip-color, var(--acct-accent)) 16%, transparent);
+        }
+        .acctMuted {
+            color: var(--acct-muted);
+            font-size: 0.85em;
+        }
+        .acctStatusWrap {
+            position: relative;
+            display:flex;
+            justify-content:center;
+            margin-bottom:5px;
+        }
+        .acctStatusRow {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border: 1px solid var(--acct-border-soft);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.02);
+            cursor: pointer;
+            width: fit-content;
+        }
+        .acctChevron {
+            font-size: 0.75em;
+            color: var(--acct-muted);
+            margin-left: 4px;
+        }
+        .acctStatusDropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            background: var(--acct-panel-2);
+            border: 1px solid var(--acct-border);
+            border-radius: 10px;
+            padding: 6px;
+            z-index: 20;
+            min-width: 200px;
+            box-shadow: 0 10px 24px -10px rgba(0,0,0,0.6);
+        }
+        .acctStatusDropdown .statusOption {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--acct-text);
+        }
+        .acctStatusDropdown .statusOption:hover {
+            background: rgba(255,255,255,0.06);
+        }
+        .acctStatusDropdown .statusOptionLabel {
+            flex: 1;
+        }
+        .acctStatusDropdown .statusCheck {
+            visibility: hidden;
+            color: var(--acct-accent);
+        }
+        .acctAdminBtnWrap {
+            margin-top: 18px;
+            flex:1;
+            align-items:end;
+        }
+        .acctBtn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: linear-gradient(135deg, var(--acct-accent), var(--ic-accent-dim));
+            color: #1a1305;
+            font-weight: 700;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 18px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: 0.2s all;
+            font-size: 0.95em;
+        }
+        .acctBtn:hover {
+            filter: brightness(1.08);
+            color: #1a1305;
+        }
+        .acctBtnAdmin {
+            width: 100%;
+        }
+        .acctBtnSmall {
+            padding: 8px 14px;
+            font-size: 0.88em;
+        }
+        .acctBtnTiny {
+            padding: 4px 10px;
+            font-size: 0.75em;
+            margin-left: 8px;
+        }
+        .acctBtnGhost {
+            background: transparent;
+            border: 1px solid var(--acct-border-soft);
+            color: var(--acct-text);
+        }
+        .acctBtnGhost:hover {
+            border-color: var(--acct-accent);
+            color: var(--acct-accent-2);
+        }
+        .acctBtnDanger {
+            background: transparent;
+            border: 1px solid rgba(255,92,92,0.5);
+            color: var(--acct-red);
+        }
+        .acctBtnDanger:hover {
+            background: rgba(255,92,92,0.12);
+            color: var(--acct-red);
+        }
+        .acctPrefRow {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 14px 16px;
+            border: 1px solid var(--acct-border-soft);
+            border-radius: 12px;
+            margin-bottom: 14px;
+            background: rgba(255,255,255,0.02);
+            flex-wrap: wrap;
+        }
+        .acctPrefRowColumn {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .acctPrefRowText {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .acctPrefIcon {
+            font-size: 1.3em;
+            color: var(--acct-accent);
+        }
+        .acctPrefTitle {
+            font-weight: 700;
+        }
+        .acctPrefBtns {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        #mbBtns br {
+            display: none;
+        }
+        .acctExtensionSection {
+            margin-top: 10px;
+        }
+        #extCheckContainer .extCheckItem {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--acct-border-soft);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            padding: 8px 12px;
+        }
+        #extCheckContainer .extCheckItem:last-child {
+            margin-bottom: 0;
+        }
+        .acctInfoCard {
+            margin-bottom: 20px;
+        }
+        .acctInfoGrid {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+        .acctInfoList {
+            flex: 1;
+            min-width: 260px;
+        }
+        .acctInfoRow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 11px 0;
+            border-bottom: 1px dashed var(--acct-border-soft);
+            flex-wrap: wrap;
+        }
+        .acctInfoRow:last-child {
+            border-bottom: none;
+        }
+        .acctInfoRow > i {
+            color: var(--acct-accent);
+            width: 18px;
+            text-align: center;
+        }
+        .acctInfoLabel {
+            color: var(--acct-muted);
+            font-weight: 600;
+            min-width: 110px;
+        }
+        .acctInfoValue {
+            color: var(--acct-text);
+        }
+        .acctInfoBtns {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            justify-content: center;
+            min-width: 200px;
+        }
+        .acctInfoBtns .acctBtn {
+            width: 100%;
+        }
+        #verifiedDisplay {
+            font-size: 0.8em;
+            margin-top: 2px !important;
         }
     `;
     document.head.appendChild(style);
@@ -768,6 +1799,7 @@ if (unsub) {
     pfpWrapper.style.position = "relative";
     pfpWrapper.style.height = "fit-content";
     pfpWrapper.style.display = "inline-block";
+    pfpWrapper.style.alignSelf = "flex-start";
     panelPic.parentNode.insertBefore(pfpWrapper, panelPic);
     pfpWrapper.appendChild(panelPic);
     const hoverOverlay = document.createElement("div");
@@ -841,6 +1873,38 @@ if (unsub) {
     saveBtn.style.display = "block";
     saveBtn.style.margin = "20px auto 0";
     pfpModal.appendChild(saveBtn);
+    const swatchColors = ["#f0b429", "#3ddc72", "#4fa3ff", "#c67bff", "#ff6ec7", "#ff5c5c", "#ffffff"];
+    const swatchWrap = document.getElementById("acctSwatches");
+    if (swatchWrap && nameColorInput && saveNameColorBtn) {
+        swatchColors.forEach(color => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "acctSwatchBtn";
+            btn.style.background = color;
+            btn.title = color;
+            btn.addEventListener("click", () => {
+                nameColorInput.value = color;
+                saveNameColorBtn.click();
+            });
+            swatchWrap.appendChild(btn);
+        });
+    }
+    const displayNameInfoDisplay = document.getElementById("displayNameInfoDisplay");
+    const memberSinceDisplay = document.getElementById("memberSinceDisplay");
+    if (displayNameInfoDisplay) {
+        setInterval(() => {
+            const current = window.appSettings?.displayName;
+            if (current != null) displayNameInfoDisplay.textContent = current;
+        }, 1000);
+    }
+    if (memberSinceDisplay) {
+        onAuthStateChanged(auth, (user) => {
+            if (user?.metadata?.creationTime) {
+                const d = new Date(user.metadata.creationTime);
+                memberSinceDisplay.textContent = d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+            }
+        });
+    }
     hoverOverlay.addEventListener("click", () => {
         previewImg.src = panelPic.src;
         selectedFile = null;
@@ -1206,17 +2270,10 @@ if (unsub) {
         if (!newDis) return showError("Discord Username Cannot Be Empty.");
         if (newDis.length > 50) return showError("Discord Username Cannot Exceed 50 Characters.");
         try {
-            const res = await fetch(`${a}/discordVerify`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    username: newDis,
-                    uid: currentUser.uid
-                })
+            const data = await fetchAPI("discordVerify", {
+                username: newDis,
+                uid: currentUser.uid
             });
-            const data = await res.json();
             if (!data.success) {
                 if (data.message === "Not In Server") {
                     return showError("You Are Not In The Discord Server.");
@@ -1282,6 +2339,7 @@ if (unsub) {
     ];
     const extCheckContainer = document.getElementById("extCheckContainer");
     let extCheckboxes = [];
+    let extSliders = [];
     if (extCheckContainer) {
         extCheckContainer.innerHTML = "";
         BLOCKING_EXTENSIONS.forEach(ext => {
@@ -1289,6 +2347,7 @@ if (unsub) {
             item.className = "extCheckItem";
             const img = document.createElement("img");
             img.src = ext.img;
+            img.alt = ext.label;
             const label = document.createElement("label");
             label.htmlFor = `extCheck_${ext.key}`;
             label.textContent = ext.label;
@@ -1308,20 +2367,58 @@ if (unsub) {
             item.appendChild(switchLabel);
             extCheckContainer.appendChild(item);
         });
-        extCheckboxes = Array.from(extCheckContainer.querySelectorAll(".extCheck"));
+        extCheckboxes = Array.from(
+            extCheckContainer.querySelectorAll(".extCheck")
+        );
+        extSliders = Array.from(
+            extCheckContainer.querySelectorAll(".switch")
+        );
     } else {
         console.error("extCheckContainer Not Found In The Page.");
     }
-    extCheckboxes.forEach(cb => {
-        cb.addEventListener("change", async () => {
+    extCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener("change", async () => {
             if (!currentUser) return;
-            extCheckboxes.forEach(other => {
-                if (other !== cb) other.checked = false;
+            const selectedKey = checkbox.dataset.key;
+            const selectedSlider = checkbox
+                .closest(".switch")
+                ?.querySelector(".slider");
+            extCheckboxes.forEach(otherCheckbox => {
+                if (otherCheckbox !== checkbox) {
+                    otherCheckbox.checked = false;
+                }
+                const otherSlider = otherCheckbox
+                    .closest(".switch")
+                    ?.querySelector(".slider");
+                if (otherSlider) {
+                    otherSlider.classList.toggle(
+                        "themed",
+                        otherCheckbox.checked
+                    );
+                }
             });
+            if (selectedSlider) {
+                selectedSlider.classList.toggle(
+                    "themed",
+                    checkbox.checked
+                );
+                selectedSlider.style.animation = "";
+                selectedSlider.style.background = "";
+            }
             const updates = {};
-            updates[cb.dataset.key] = cb.checked ? true : null;
-            await dbUpdate(`users/${currentUser.uid}/profile`, updates);
-            showSuccess("Extension Updated!");
+            updates[selectedKey] = checkbox.checked
+                ? true
+                : null;
+            try {
+                await dbUpdate(
+                    `users/${currentUser.uid}/profile`,
+                    updates
+                );
+                showSuccess("Extension Updated!");
+            } catch (err) {
+                console.error("Failed To Update Extension:", err);
+                showError("Failed To Update Extension.");
+            }
         });
     });
     resetPasswordBtnAcc.addEventListener("click", async () => {
@@ -1380,8 +2477,16 @@ if (unsub) {
         }
     }
     function loadExtensionCheckbox(profile) {
-        extCheckboxes.forEach(cb => {
-            cb.checked = profile?.[cb.dataset.key] === true;
+        extCheckboxes.forEach(checkbox => {
+            const slider = checkbox
+                .closest(".switch")
+                ?.querySelector(".slider");
+            const isChecked =
+                profile?.[checkbox.dataset.key] === true;
+            checkbox.checked = isChecked;
+            if (slider) {
+                slider.classList.toggle("themed", isChecked);
+            }
         });
     }
     onAuthStateChanged(auth, async (user) => {
@@ -1417,42 +2522,44 @@ if (unsub) {
                 const badges = document.getElementById('badges');
                 badges.innerHTML = "";
                 adminBtn.style.display = 'none';
-                function addBadge(name, color, icon) {
+                function addBadge(name, color, icon, short) {
                     const badge = document.createElement("span");
                     const badgeContainer = document.getElementById('badgeContainer');
                     badgeContainer.style.display = 'flex';
                     badgeContainer.style.flexDirection = 'column';
-                    badge.style.color = color;
-                    badge.style.fontSize = '2em';
-                    badge.style.fontWeight = "600";
+                    badge.classList = "acctBadgeChip niceTitle";
+                    const chipColor = color || "var(--acct-text)";
+                    badge.style.color = chipColor;
+                    badge.style.setProperty("--chip-color", chipColor);
+                    badge.title = name;
                     badge.innerHTML = `
-                        <i class="${icon}" style="margin-right:6px;" title="${name}"></i>
+                        <i class="${icon}"></i><span>${short || name}</span>
                     `;
                     badges.appendChild(badge);
                 }
                 let hasAnyRole = false;
                 if (profile.isSus) {
-                    addBadge("This User Is Currently Under Investigation, Please Do Not Interact With This User", "red", "ic ic-shield-exclamation");
+                    addBadge("This User Is Currently Under Investigation, Please Do Not Interact With This User", "red", "ic ic-shield-exclamation", "Flagged");
                     hasAnyRole = true;
                 }
                 if (profile.isOwner) {
                     addBadge("Owner", "lime", "ic ic-shield-plus");
-                    adminBtn.style.display = 'block';
+                    adminBtn.style.display = 'flex';
                     hasAnyRole = true;
                 }
                 if (profile.isTester) {
                     addBadge("Tester", "DarkGoldenRod", "ic ic-cogs");
-                    adminBtn.style.display = 'block';
+                    adminBtn.style.display = 'flex';
                     hasAnyRole = true;
                 }
                 if (profile.isCoOwner) {
                     addBadge("Co-Owner", "lightblue", "ic ic-shield-fill");
-                    adminBtn.style.display = 'block';
+                    adminBtn.style.display = 'flex';
                     hasAnyRole = true;
                 }
                 if (profile.isHAdmin) {
                     addBadge("Head Admin", "#00cc99", "ic ic-shield-halved");
-                    adminBtn.style.display = 'block';
+                    adminBtn.style.display = 'flex';
                     hasAnyRole = true;
                 }
                 if (profile.isAdmin) {
@@ -1460,103 +2567,105 @@ if (unsub) {
                     hasAnyRole = true;
                 }
                 if (profile.isPartner) {
-                    addBadge("This User Is A Partner Of Infinite Campus", "cornflowerblue", "ic ic-handshake");
+                    addBadge("This User Is A Partner Of Infinite Campus", "cornflowerblue", "ic ic-handshake", "Partner");
                     hasAnyRole = true;
                 }
                 if (profile.isDev) {
-                    addBadge("This User Is A Developer For Infinite Campus Games", "green", "ic ic-code-square");
-                    adminBtn.style.display = 'block';
+                    addBadge("This User Is A Developer For Infinite Campus Games", "green", "ic ic-code-square", "Developer");
+                    adminBtn.style.display = 'flex';
                     hasAnyRole = true;
                 }
                 if (profile.premium3) {
-                    addBadge("This User Has Infinite Campus Premium T3", "red", "ic ic-hearts");
+                    addBadge("This User Has Infinite Campus Premium T3", "red", "ic ic-hearts", "Premium T3");
                     hasAnyRole = true;
                 }
                 if (profile.premium2) {
-                    addBadge("This User Has Infinite Campus Premium T2", "orange", "ic ic-heart-fill");
+                    addBadge("This User Has Infinite Campus Premium T2", "orange", "ic ic-heart-fill", "Premium T2");
                     hasAnyRole = true;
                 }
                 if (profile.premium1) {
-                    addBadge("This User Has Infinite Campus Premium", "yellow", "ic ic-heart-half");
+                    addBadge("This User Has Infinite Campus Premium", "yellow", "ic ic-heart-half", "Premium");
                     hasAnyRole = true;
                 }
                 if (profile.isDonater) {
-                    addBadge("This User Has Donated To Infinite Campus", "#00E5FF", "ic ic-balloon-heart");
+                    addBadge("This User Has Donated To Infinite Campus", "#00E5FF", "ic ic-balloon-heart", "Donator");
                     hasAnyRole = true;
                 }
                 if (profile.isUploader) {
-                    addBadge("This User Has Uploaded A Movie To Infinite Campus", "grey", "ic ic-film");
+                    addBadge("This User Has Uploaded A Movie To Infinite Campus", "grey", "ic ic-film", "Uploader");
                     hasAnyRole = true
                 }
                 if (profile.mileStone) {
-                    addBadge("This User Is The 100th Signed Up User", "yellow", "ic ic-award");
+                    addBadge("This User Is The 100th Signed Up User", "yellow", "ic ic-award", "100th User");
                     hasAnyRole = true;
                 }
                 if (profile.isGuesser) {
-                    addBadge("This User Has A Lot Of Freetime", "#FF0000", "ic ic-stopwatch");
+                    addBadge("This User Has A Lot Of Freetime", "#FF0000", "ic ic-stopwatch", "Guesser");
                     hasAnyRole = true;
                 }
                 if (profile.dUsername) {
                     const discordUser = profile.dUsername;
-                    addBadge(`Known As @${discordUser} On Discord`, "#5865F2", "ic ic-discord");
+                    addBadge(`Known As @${discordUser} On Discord`, "#5865F2", "ic ic-discord", `@${discordUser}`);
                     hasAnyRole = true;
                 }
                 if (profile.isLink) {
-                    addBadge("This User Has Shared A Lot Of Links In The Links Channel", "#4fa3ff", "ic ic-link");
+                    addBadge("This User Has Shared A Lot Of Links In The Links Channel", "#4fa3ff", "ic ic-link", "Link Sharer");
                     hasAnyRole = true;
                 }
                 if (profile.secure) {
-                    addBadge("This User Has Securely At School", "", "ib ic ic-securely");
+                    addBadge("This User Has Securely At School", "", "ib ic ic-securely", "Securely");
                     hasAnyRole = true;
                 }
                 if (profile.guardian) {
-                     addBadge("This User Has GoGuardian At School", "", "ib ic ic-goguardian");
+                     addBadge("This User Has GoGuardian At School", "", "ib ic ic-goguardian", "GoGuardian");
                     hasAnyRole = true;
                 }
                 if (profile.lanschool) {
-                    addBadge("This User Has Lanschool At School", "", "ib ic ic-lanschool");
+                    addBadge("This User Has Lanschool At School", "", "ib ic ic-lanschool", "Lanschool");
                     hasAnyRole = true;
                 }
                 if (profile.linewize) {
-                    addBadge("This User Has Linewize At School", "", "ib ic ic-linewize");
+                    addBadge("This User Has Linewize At School", "", "ib ic ic-linewize", "Linewize");
                     hasAnyRole = true;
                 }
                 if (profile.blocksi) {
-                    addBadge("This User Has Blocksi At School", "", "ib ic ic-blocksi");
+                    addBadge("This User Has Blocksi At School", "", "ib ic ic-blocksi", "Blocksi");
                     hasAnyRole = true;
                 }
                 if (profile.fortiguard) {
-                    addBadge("This User Has FortiGuard At School", "", "ib ic ic-fortiguard");
+                    addBadge("This User Has FortiGuard At School", "", "ib ic ic-fortiguard", "FortiGuard");
                     hasAnyRole = true;
                 }
                 if (profile.lightspeed) {
-                    addBadge("This User Has LightSpeed At School", "", "ib ic ic-lightspeed");
+                    addBadge("This User Has LightSpeed At School", "", "ib ic ic-lightspeed", "LightSpeed");
                     hasAnyRole = true;
                 }
                 if (profile.cisco) {
-                    addBadge("This User Has Cisco Umbrella At School", "", "ib ic ic-cisco");
+                    addBadge("This User Has Cisco Umbrella At School", "", "ib ic ic-cisco", "Cisco Umbrella");
                     hasAnyRole = true;
                 }
                 if (profile.contentkeeper) {
-                    addBadge("This User Has ContentKeeper At School", "", "ib ic ic-contentkeeper");
+                    addBadge("This User Has ContentKeeper At School", "", "ib ic ic-contentkeeper", "ContentKeeper");
                     hasAnyRole = true;
                 }
                 if (profile.deledao) {
-                    addBadge("This User Has Deledao At School", "", "ib ic ic-deledao");
+                    addBadge("This User Has Deledao At School", "", "ib ic ic-deledao", "Deledao");
                     hasAnyRole = true;
                 }
                 if (profile.iboss) {
-                    addBadge("This User Has IBoss At School", "", "ib ic ic-iboss");
+                    addBadge("This User Has IBoss At School", "", "ib ic ic-iboss", "IBoss");
                     hasAnyRole = true;
                 }
                 if (profile.barracuda) {
-                    addBadge("This User Has Barracuda At School", "", "ib ic ic-barracuda");
+                    addBadge("This User Has Barracuda At School", "", "ib ic ic-barracuda", "Barracuda");
                     hasAnyRole = true;
                 }
                 if (profile.verified) {
-                    addBadge("Verified User", "white", "ic ic-shield-check");
+                    addBadge("Verified User", "white", "ic ic-shield-check", "Verified");
                     hasAnyRole = true;
                 }
+                const noBadgesMsg = document.getElementById('noBadgesMsg');
+                if (noBadgesMsg) noBadgesMsg.style.display = hasAnyRole ? 'none' : 'block';
             }
             dbGet(`users/${user.uid}/profile`).then(applyProfile).catch(() => {});
             setInterval(() => {
